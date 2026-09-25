@@ -1,0 +1,20 @@
+# Pipeline + the plugins the Jenkinsfile actually uses.
+# Keep this list minimal: every plugin is code that runs with controller access.
+
+# Pipeline itself
+workflow-aggregator
+
+# withCredentials / withUsernamePassword
+credentials-binding
+
+# sshagent(sshCredentials: ...)
+ssh-agent
+
+# options { timestamps() }
+timestamper
+
+# SCM
+git
+
+# Keep disk usage bounded on long-lived controllers
+ws-cleanup
