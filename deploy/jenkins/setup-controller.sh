@@ -31,6 +31,13 @@ die()  { printf '\033[1;31mXXX %s\033[0m\n' "$*" >&2; exit 1; }
 # normal user's home. Invoked through bash explicitly rather than as "$SELF",
 # because the executable bit does not survive every copy method and a script
 # that cannot be run the way its own help text says is a bad first impression.
+# The human who ran this needs to keep ownership of the checkout. Everything
+# here runs as root, because installing Docker and writing into /opt both
+# require it, but a root-owned repository is a repository the operator cannot
+# edit - and the next step is always "go and put your credentials in it".
+# Remember who invoked us so the checkout can be handed back at the end.
+REPO_OWNER="${SUDO_USER:-root}"
+
 if [ "$(id -u)" -ne 0 ]; then
     log "Re-running under sudo"
     PASSTHROUGH=()
@@ -38,7 +45,7 @@ if [ "$(id -u)" -ne 0 ]; then
         PASSTHROUGH+=("$1")
         shift
     done
-    exec sudo env "REPO_DIR=$REPO_DIR" "JENKINS_PORT=$JENKINS_PORT" \
+    exec sudo env "REPO_DIR=$REPO_DIR" "JENKINS_PORT=$JENKINS_PORT" "REPO_OWNER=$(id -un)" \
         bash "$SCRIPT_DIR/$(basename "$0")" ${PASSTHROUGH+"${PASSTHROUGH[@]}"}
 fi
 
@@ -87,6 +94,12 @@ log "Docker $(docker version --format '{{.Server.Version}}'), Compose $(docker c
 # the application is not required.
 if [ -d "$REPO_DIR/.git" ]; then
     log "Updating ${REPO_DIR}"
+    # git refuses to touch a repository whose owner is not the current user, as
+    # a guard against another account's config redirecting a clone somewhere
+    # unexpected. Once the checkout below is handed to the operator, root no
+    # longer owns it, so allow root explicitly rather than disabling the check
+    # globally.
+    git config --global --add safe.directory "$REPO_DIR"
     git -C "$REPO_DIR" pull --ff-only --quiet
 else
     command -v git >/dev/null 2>&1 || die "git is required to fetch the repository."
@@ -94,6 +107,15 @@ else
     log "Cloning ${REPO_URL} into ${REPO_DIR}"
     mkdir -p "$(dirname "$REPO_DIR")"
     git clone --depth 1 "$REPO_URL" "$REPO_DIR"
+fi
+
+# Hand the checkout back to whoever ran the script, so the credentials they are
+# about to add are writable without sudo. Group-write as well, because the
+# secrets are read by a container running as root and by the operator.
+if [ "$REPO_OWNER" != "root" ] && id "$REPO_OWNER" >/dev/null 2>&1; then
+    chown -R "$REPO_OWNER":"$(id -gn "$REPO_OWNER")" "$REPO_DIR"
+    git config --global --add safe.directory "$REPO_DIR"
+    log "Checkout owned by ${REPO_OWNER}; no sudo needed to edit the secrets"
 fi
 
 JENKINS_DIR="$REPO_DIR/deploy/jenkins"
