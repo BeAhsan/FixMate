@@ -137,9 +137,20 @@ Check `uname -m` on the VPS first: `x86_64` wants `linux/amd64`, `aarch64` wants
 `linux/arm64`. Getting this wrong does not fail the build, it fails on the
 target with an exec format error.
 
-**If the package is private**, give the VPS its own pull token. It is a
-separate, weaker credential than the one that pushes - `read:packages` only -
-and it never leaves the server.
+**If the package is private**, bootstrap needs a pull token before it can
+generate the app key, because the key is produced by running the image. On a
+first run there is no `.env` to put the token in yet, so expect bootstrap to
+stop with:
+
+```
+XXX APP_KEY is empty in /opt/fixmate/.env, and the application cannot boot
+    without it. Refusing to report the server as ready.
+```
+
+That is the script being honest rather than broken. It has written `.env` and
+everything else, and has nothing left to do but wait for a token. Add one - a
+separate, weaker credential than the push token, `read:packages` only, and it
+never leaves the server:
 
 ```sh
 ssh -t ubuntu@92.5.105.170 \
@@ -147,11 +158,14 @@ ssh -t ubuntu@92.5.105.170 \
    | sudo tee -a /opt/fixmate/.env >/dev/null"
 ```
 
-Built with `printf` on the remote side rather than a local heredoc on purpose.
-`ssh -t` allocates a pty, and anything written into one comes back out with
-carriage returns; a heredoc piped into it can leave `\r` at the end of each line
-in `.env`. `printf` writes newlines directly to the pipe the `tee` reads, so the
-file stays byte-clean. The `>/dev/null` keeps the token off your terminal.
+Then run bootstrap a second time. It logs in, pulls, fills in the missing
+`APP_KEY`, and reports the server ready. The database password generated the
+first time is left alone, so this repair is safe to repeat.
+
+Two details in that command are deliberate. The `printf` runs on the remote side
+rather than being a local heredoc, because `ssh -t` allocates a pty and a heredoc
+piped into one can leave `\r` at the end of every line it writes. And
+`>/dev/null` keeps the token off your terminal.
 
 Leave those two lines out for a public image and the deploy skips logging in.
 
