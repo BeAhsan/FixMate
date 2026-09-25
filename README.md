@@ -10,7 +10,7 @@ deployed to a VPS by a Jenkins pipeline.
   Jenkins (container, Linux server)
       │  1. verify   pint
       │  2. test     phpunit
-      │  3. build    docker build  →  ghcr.io/OWNER/fixmate/app:<sha>
+      │  3. build    docker build  →  ghcr.io/beahsan/fixmate/app:<sha>
       │  4. deploy   ssh → 92.5.105.170  →  pull, migrate, swap, health check
       │  5. smoke    curl the public URL
       ▼
@@ -37,10 +37,16 @@ web server, the queue worker and the scheduler always run identical code.
 
 ## Before you start
 
-Replace `OWNER` with your container registry namespace in two places:
+The registry namespace is already set to `ghcr.io/beahsan/fixmate/app`, matching
+the GitHub remote. Confirm it in two places if you rename anything:
 
-- `Jenkinsfile` → `IMAGE_NAME = 'ghcr.io/OWNER/fixmate/app'`
-- `deploy/env.example` → `APP_IMAGE=ghcr.io/OWNER/fixmate/app:latest`
+- `Jenkinsfile` → `IMAGE_NAME`
+- `deploy/env.example` → `APP_IMAGE`
+
+You also need a **GitHub token with `write:packages`** scope, saved as the
+`fixmate-registry` credential in Jenkins. Generate one at
+*GitHub → Settings → Developer settings → Personal access tokens → Fine-grained
+tokens*, granting `Packages: Read and write`.
 
 ## Local development
 
@@ -95,7 +101,7 @@ On `92.5.105.170`:
    the app key with:
 
    ```sh
-   docker run --rm -u 0 ghcr.io/OWNER/fixmate/app:latest \
+   docker run --rm -u 0 ghcr.io/beahsan/fixmate/app:latest \
        php artisan key:generate --show
    ```
 
@@ -111,6 +117,57 @@ On `92.5.105.170`:
 
 The pipeline rsyncs `docker-compose.prod.yml` and `deploy/` into `/opt/fixmate`
 on every run. `.env` is never overwritten.
+
+## First deploy
+
+This gets the app live without Jenkins. Do it once by hand; after that the
+pipeline takes over the same steps.
+
+**1. Build and push the image** from your machine, for the VPS's architecture.
+`amd64` unless the box is ARM/Graviton — check with `uname -m` on the VPS.
+
+```sh
+docker login ghcr.io                       # username + a token with write:packages
+docker buildx build --platform linux/amd64 \
+    --tag ghcr.io/beahsan/fixmate/app:manual \
+    --tag ghcr.io/beahsan/fixmate/app:latest \
+    --push .
+```
+
+**2. Put the orchestration files on the VPS.** Cloning is simplest, since
+nothing here is secret:
+
+```sh
+ssh deploy@92.5.105.170 'sudo git clone https://github.com/BeAhsan/FixMate.git /opt/fixmate && sudo chown -R deploy:deploy /opt/fixmate'
+```
+
+If the repo is private, add a read-only [deploy key][deploy-key] for the VPS
+first, or `scp` the two paths over instead.
+
+[deploy-key]: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-deploy-keys
+
+**3. Create `.env` on the VPS.** Copy the template and generate a real key:
+
+```sh
+ssh deploy@92.5.105.170 'cp /opt/fixmate/deploy/env.example /opt/fixmate/.env && chmod 600 /opt/fixmate/.env'
+ssh deploy@92.5.105.170 'docker run --rm -u 0 ghcr.io/beahsan/fixmate/app:manual php artisan key:generate --show'
+```
+
+Paste that key into `APP_KEY` in `/opt/fixmate/.env`, then set real values for
+`DB_PASSWORD` and `DB_ROOT_PASSWORD`. Change `APP_PORT` if 8080 is taken.
+
+**4. Deploy.**
+
+```sh
+ssh deploy@92.5.105.170 'cd /opt/fixmate && ./deploy/deploy.sh ghcr.io/beahsan/fixmate/app:manual'
+```
+
+It pulls, migrates, swaps the containers, health-checks, and rolls itself back
+if anything fails. Confirm it answered:
+
+```sh
+curl -i http://92.5.105.170:8080/up
+```
 
 ## One-time Jenkins setup
 

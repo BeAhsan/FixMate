@@ -63,7 +63,7 @@ pipeline {
 
     environment {
         REGISTRY   = 'ghcr.io'
-        IMAGE_NAME = 'ghcr.io/OWNER/fixmate/app'
+        IMAGE_NAME = 'ghcr.io/beahsan/fixmate/app'
         GIT_SHA    = "${env.GIT_COMMIT?.take(12) ?: 'local'}"
         IMAGE      = "${env.IMAGE_NAME}:${env.GIT_SHA}"
     }

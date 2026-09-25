@@ -70,7 +70,7 @@ FROM php:${PHP_VERSION}-fpm-alpine AS runtime
 
 LABEL org.opencontainers.image.title="FixMate" \
       org.opencontainers.image.description="Laravel application served by nginx + PHP-FPM" \
-      org.opencontainers.image.source="https://github.com/OWNER/FixMate"
+      org.opencontainers.image.source="https://github.com/BeAhsan/FixMate"
 
 ENV APP_DIR=/var/www/html \
     COMPOSER_ALLOW_SUPERUSER=1
