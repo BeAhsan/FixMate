@@ -1,0 +1,154 @@
+# Production stack, run on the target VPS.
+#
+# Nothing is bind-mounted: the containers run the immutable image that the
+# Jenkins pipeline pulled from the registry. Secrets come from the .env file
+# next to this compose file (see deploy/env.example) via `env_file`.
+#
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# MySQL and Redis publish no ports. Only the app publishes one.
+
+name: fixmate
+
+x-app-image: &app-image
+  image: ${APP_IMAGE:?set APP_IMAGE, e.g. ghcr.io/owner/fixmate/app:1.2.3}
+  pull_policy: always
+
+x-app-environment: &app-environment
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_URL: ${APP_URL:?set APP_URL in .env}
+  # db/redis hosts are compose service names, not .env values
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  REDIS_CLIENT: phpredis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  # Let the entrypoint block until MySQL/Redis are accepting connections,
+  # so a cold `up` never races the database.
+  APP_WAIT_FOR_SERVICES: "1"
+
+x-app-depends: &app-depends
+  mysql:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+
+services:
+  app:
+    <<: *app-image
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      <<: *app-environment
+    ports:
+      # 8080 by default: port 80 on the target host is usually already taken by
+      # the reverse proxy or web server that fronts this app. Set APP_PORT=80 in
+      # .env only if nothing else is listening there.
+      - "${APP_PORT:-8080}:80"
+    depends_on: *app-depends
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks: [fixmate]
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  queue:
+    <<: *app-image
+    restart: unless-stopped
+    command:
+      - php
+      - artisan
+      - queue:work
+      - --sleep=3
+      - --tries=3
+      - --max-time=3600
+      - --no-interaction
+    env_file:
+      - .env
+    environment:
+      <<: *app-environment
+    depends_on: *app-depends
+    networks: [fixmate]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  scheduler:
+    <<: *app-image
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work", "--no-interaction"]
+    env_file:
+      - .env
+    environment:
+      <<: *app-environment
+    depends_on: *app-depends
+    networks: [fixmate]
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:?set DB_DATABASE in .env}
+      MYSQL_USER: ${DB_USERNAME:?set DB_USERNAME in .env}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks: [fixmate]
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory-policy
+      - allkeys-lru
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [fixmate]
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  fixmate:
+    driver: bridge

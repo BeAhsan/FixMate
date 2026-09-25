@@ -1,0 +1,151 @@
+# Local development stack.
+#
+#   docker compose up -d --build
+#   docker compose --profile hot up -d      # also run the Vite dev server
+#
+# Source is bind-mounted, so PHP edits are picked up immediately. Two host-side
+# prerequisites, because the bind mount shadows whatever the image baked in:
+#
+#   composer install     # populates ./vendor for the mounted code
+#   npm install && npm run build
+#
+# .env is read from the bind mount, so the normal Laravel file just works.
+
+name: fixmate
+
+x-app-image: &app-image
+  build:
+    context: .
+    target: runtime
+  image: fixmate/app:dev
+
+x-app-environment: &app-environment
+  APP_ENV: local
+  APP_DEBUG: "true"
+  APP_URL: http://localhost:8000
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  # Must match the mysql service below. There is no env_file in dev: the
+  # bind-mounted .env is read by Laravel, so these come from the shell
+  # environment or the compose defaults.
+  DB_DATABASE: ${DB_DATABASE:-fixmate}
+  DB_USERNAME: ${DB_USERNAME:-fixmate}
+  DB_PASSWORD: ${DB_PASSWORD:-fixmate}
+  REDIS_CLIENT: phpredis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+services:
+  app:
+    <<: *app-image
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:80"
+    volumes:
+      - .:/var/www/html:cached
+    environment:
+      <<: *app-environment
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [fixmate]
+
+  queue:
+    <<: *app-image
+    restart: unless-stopped
+    command:
+      - php
+      - artisan
+      - queue:work
+      - --sleep=3
+      - --tries=3
+      - --max-time=3600
+    volumes:
+      - .:/var/www/html:cached
+    environment:
+      <<: *app-environment
+    depends_on:
+      app:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [fixmate]
+
+  scheduler:
+    <<: *app-image
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - .:/var/www/html:cached
+    environment:
+      <<: *app-environment
+    depends_on:
+      app:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [fixmate]
+
+  # Opt-in Vite dev server for CSS/JS hot reload: docker compose --profile hot up -d
+  assets:
+    image: node:22-alpine
+    profiles: [hot]
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    environment:
+      APP_NAME: ${APP_NAME:-FixMate}
+    command: sh -c "npm install --no-audit --no-fund && npm run dev"
+    networks: [fixmate]
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-fixmate}
+      MYSQL_USER: ${DB_USERNAME:-fixmate}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-fixmate}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-fixmate}
+    ports:
+      # Published for local tooling only; never do this in production.
+      - "127.0.0.1:${DB_FORWARD_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${DB_ROOT_PASSWORD:-fixmate}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [fixmate]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:${REDIS_FORWARD_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [fixmate]
+
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  fixmate:
+    driver: bridge
