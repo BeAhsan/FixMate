@@ -36,7 +36,7 @@ pipeline {
         )
         string(
             name: 'DEPLOY_HOST',
-            defaultValue: '92.5.105.170',
+            defaultValue: '192.168.139.242',
             description: 'SSH host of the target VPS. Required unless TARGET is "none".'
         )
         string(

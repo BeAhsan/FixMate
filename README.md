@@ -11,10 +11,10 @@ deployed to a VPS by a Jenkins pipeline.
       │  1. verify   pint
       │  2. test     phpunit
       │  3. build    docker build  →  ghcr.io/beahsan/fixmate/app:<sha>
-      │  4. deploy   ssh → 92.5.105.170  →  pull, migrate, swap, health check
+      │  4. deploy   ssh → 192.168.139.242  →  pull, migrate, swap, health check
       │  5. smoke    curl the public URL
       ▼
-  VPS 92.5.105.170
+  VPS 192.168.139.242
       app (nginx + PHP-FPM)  ·  queue worker  ·  scheduler  ·  MySQL 8.4  ·  Redis 7
 ```
 
@@ -106,9 +106,9 @@ the config in `/opt/fixmate`, and writes a `.env` with a freshly generated app
 key and database passwords.
 
 ```sh
-scp -rp docker-compose.prod.yml deploy ubuntu@92.5.105.170:/tmp/
-ssh -t ubuntu@92.5.105.170 \
-  'cd /tmp && bash ./deploy/bootstrap-vps.sh --url http://92.5.105.170:8080'
+scp -rp docker-compose.prod.yml deploy ahsanmanzoor@192.168.139.242:/tmp/
+ssh -t ahsanmanzoor@192.168.139.242 \
+  'cd /tmp && bash ./deploy/bootstrap-vps.sh --url http://192.168.139.242:8080'
 ```
 
 Both `docker-compose.prod.yml` and `deploy/` are needed. The script installs
@@ -153,7 +153,7 @@ separate, weaker credential than the push token, `read:packages` only, and it
 never leaves the server:
 
 ```sh
-ssh -t ubuntu@92.5.105.170 \
+ssh -t ahsanmanzoor@192.168.139.242 \
   "printf 'REGISTRY_USER=%s\nREGISTRY_TOKEN=%s\n' 'BeAhsan' 'paste-your-token-here' \
    | sudo tee -a /opt/fixmate/.env >/dev/null"
 ```
@@ -172,8 +172,8 @@ Leave those two lines out for a public image and the deploy skips logging in.
 Then deploy, and confirm:
 
 ```sh
-ssh -t ubuntu@92.5.105.170 'cd /opt/fixmate && bash ./deploy/deploy.sh ghcr.io/beahsan/fixmate/app:manual'
-curl -i http://92.5.105.170:8080/up
+ssh -t ahsanmanzoor@192.168.139.242 'cd /opt/fixmate && bash ./deploy/deploy.sh ghcr.io/beahsan/fixmate/app:manual'
+curl -i http://192.168.139.242:8080/up
 ```
 
 The script is safe to re-run: it leaves an existing `.env` alone, so a partial
@@ -198,8 +198,8 @@ Then add four secret files in that directory, each named exactly as below:
 | --- | --- |
 | `registry-user` | your GitHub username |
 | `registry-token` | a token with `write:packages` |
-| `ssh-key` | the private key for `ubuntu@92.5.105.170` |
-| `known-hosts` | `ssh-keyscan -H 92.5.105.170 > known-hosts` |
+| `ssh-key` | the private key for `ahsanmanzoor@192.168.139.242` |
+| `known-hosts` | `ssh-keyscan -H 192.168.139.242 > known-hosts` |
 
 These are gitignored. The controller reads them on startup and creates the
 credentials and the pipeline job itself, so there is nothing to click through.
@@ -231,7 +231,7 @@ Push to `main` and the `fixmate` job does the rest. You can also run it by hand
 with parameters:
 
 - `TARGET` — `none` verifies and builds only, `staging` or `production` deploys.
-- `DEPLOY_HOST` — defaults to `92.5.105.170`.
+- `DEPLOY_HOST` — defaults to `192.168.139.242`.
 - `DEPLOY_USER` — `deploy`.
 - `PLATFORM` — `linux/amd64` by default. Use `linux/arm64` if the VPS is
   Graviton or Apple silicon. **This must match the VPS**, or the image will
@@ -246,7 +246,7 @@ with parameters:
 looked healthy:
 
 ```sh
-ssh -t ubuntu@92.5.105.170 'cd /opt/fixmate && bash ./deploy/rollback.sh'
+ssh -t ahsanmanzoor@192.168.139.242 'cd /opt/fixmate && bash ./deploy/rollback.sh'
 ```
 
 > **Migrations are not reverted.** MySQL cannot roll back DDL, so a migration
