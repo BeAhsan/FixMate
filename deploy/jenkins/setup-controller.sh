@@ -17,7 +17,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SOURCE_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REPO_DIR="${REPO_DIR:-/opt/fixmate-ci}"
 JENKINS_PORT="${JENKINS_PORT:-8080}"
 
@@ -153,8 +152,7 @@ $(printf '\033[1;31mXXX Not starting the controller yet.\033[0m')
 
   Two kinds of thing are missing.
 
-  Fill in ${CONFIG} - it is a copy of config.example, so the values that
-  matter are DEPLOY_HOST, DEPLOY_USER, PLATFORM and REPO_URL.
+  Check ${CONFIG} - it is a copy of config.example.
 
   Then create a file for each secret, named exactly:
 
@@ -175,6 +173,42 @@ $(printf '\033[1;31mXXX Not starting the controller yet.\033[0m')
 
 EOF
     exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 4b. Cross-check against the Jenkinsfile
+# ---------------------------------------------------------------------------
+# DEPLOY_HOST, DEPLOY_USER, PLATFORM and SMOKE_URL exist in two places, and the
+# two do not have equal authority. The job's defaults come from the declarative
+# `parameters {}` block in the Jenkinsfile, which is applied on first run and
+# overrides anything set here. So editing this file changes what is logged and
+# what is validated, not where the pipeline actually deploys.
+#
+# That is a trap worth fencing rather than documenting, so a disagreement is
+# reported now, while there is a human to read it, instead of surfacing as a
+# build that pushes to one host and deploys to another.
+JENKINSFILE="$REPO_DIR/Jenkinsfile"
+if [ -f "$JENKINSFILE" ]; then
+    jenkinsfile_param() {
+        sed -n "/name: '$1'/,/^[[:space:]]*)/p" "$JENKINSFILE" \
+            | sed -n "s/.*defaultValue: *'\{0,1\}\([^',]*\)'\{0,1\},\{0,1\}$/\1/p" | head -n 1
+    }
+    DIVERGED=""
+    for key in DEPLOY_HOST DEPLOY_USER PLATFORM; do
+        from_file="$(config_value "$key")"
+        from_jenkins="$(jenkinsfile_param "$key")"
+        if [ -n "$from_file" ] && [ -n "$from_jenkins" ] && [ "$from_file" != "$from_jenkins" ]; then
+            DIVERGED="${DIVERGED}    ${key}: config says '${from_file}', Jenkinsfile says '${from_jenkins}'\n"
+        fi
+    done
+    if [ -n "$DIVERGED" ]; then
+        warn "config and the Jenkinsfile disagree about where to deploy:"
+        printf "$DIVERGED" >&2
+        warn "The Jenkinsfile wins - it supplies the job's parameter defaults."
+        warn "Fix whichever is wrong, or the pipeline will not go where you expect."
+    fi
+else
+    warn "No Jenkinsfile at ${JENKINSFILE}; skipping the cross-check."
 fi
 
 # ---------------------------------------------------------------------------
