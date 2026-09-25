@@ -1,0 +1,46 @@
+# Jenkins controller.
+#
+#   docker compose -f deploy/jenkins/docker-compose.yml up -d --build
+#   open http://<server>:8080
+#
+# Running as root is deliberate: the container needs to read the mounted Docker
+# socket, which is root-owned on the host.
+
+services:
+  jenkins:
+    build:
+      context: .
+    image: fixmate/jenkins:latest
+    container_name: fixmate-jenkins
+    restart: unless-stopped
+    user: root
+    environment:
+      # Skip the setup wizard; init.groovy.d finishes the configuration.
+      JAVA_OPTS: >-
+        -Djenkins.install.runSetupWizard=false
+        -Djava.awt.headless=true
+        -Duser.timezone=UTC
+    ports:
+      - "${JENKINS_PORT:-8080}:8080"
+      # WebSocket port, needed by some agent features. Uncomment if needed.
+      # - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      # Lets the controller build and push images. Root-equivalent on the host.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # buildx state for the container driver.
+      - buildx_state:/root/.docker/buildx
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+volumes:
+  jenkins_home:
+  buildx_state:
