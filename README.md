@@ -181,44 +181,62 @@ run never costs you the generated secrets.
 
 ## One-time Jenkins setup
 
-The controller runs on its own server (`192.168.139.26`) and reaches the VPS
-over SSH, so nothing has to be port-forwarded.
+The controller runs on its own machine (`192.168.139.26`) and reaches the deploy
+host over SSH, so nothing has to be port-forwarded.
 
-**1. Put the credentials in place.** On the Jenkins server, from a checkout:
+One script does the whole preparation - installing Docker, fetching a checkout
+and creating the secrets directory - then stops and tells you what is still
+missing, because credentials cannot be invented:
 
 ```sh
-mkdir -p deploy/jenkins/secrets
-cp deploy/jenkins/secrets/config.example deploy/jenkins/secrets/config
-$EDITOR deploy/jenkins/secrets/config      # REPO_URL, DEPLOY_HOST, PLATFORM, ...
+bash deploy/jenkins/setup-controller.sh
 ```
 
-Then add four secret files in that directory, each named exactly as below:
+**Fill in the secrets** it points at. The first run has written
+`deploy/jenkins/secrets/config` from the template; check at least `DEPLOY_HOST`,
+`DEPLOY_USER`, `PLATFORM` and `REPO_URL`. Then create four files in the same
+directory, each named exactly:
 
 | File | How to produce it |
 | --- | --- |
 | `registry-user` | your GitHub username |
 | `registry-token` | a token with `write:packages` |
-| `ssh-key` | the private key for `ahsanmanzoor@192.168.139.242` |
+| `ssh-key` | the private key Jenkins uses to reach the deploy host |
 | `known-hosts` | `ssh-keyscan -H 192.168.139.242 > known-hosts` |
 
-These are gitignored. The controller reads them on startup and creates the
+The key pair is generated on the controller and the public half added to
+`~/.ssh/authorized_keys` on the deploy host:
+
+```sh
+ssh-keygen -t ed25519 -N '' -f ~/.ssh/fixmate_deploy
+ssh-keyscan -H 192.168.139.242 > deploy/jenkins/secrets/known-hosts
+```
+
+`known-hosts` is not ceremony. The pipeline connects with
+`StrictHostKeyChecking=yes`, so this file is what pins the identity of the host
+it deploys to; without it the first connection is whatever answers on that
+address.
+
+All four are gitignored. The controller reads them on startup and creates the
 credentials and the pipeline job itself, so there is nothing to click through.
 Change one and restart the container to roll it.
 
-**2. Start the controller.**
+**Start the controller** by running the same script again. It is idempotent, so
+this second run skips the preparation, brings the container up and waits for it
+to report healthy:
 
 ```sh
-docker compose -f deploy/jenkins/docker-compose.yml up -d --build
+bash deploy/jenkins/setup-controller.sh
 ```
 
-**3. Open it** at <http://192.168.139.26:8080> and run the `fixmate` job. It is
-already there, already pointed at the right branch. The setup wizard is
-skipped, plugins are baked into the image, and a buildx builder is created on
-first boot.
+**Open it** at <http://192.168.139.26:8080>, log in with the initial admin
+password the script tells you how to read, and run the `fixmate` job. It is
+already there, already pointed at the right branch. The setup wizard is skipped,
+plugins are baked into the image, and a buildx builder is created on first boot.
 
 If the secrets directory is missing or incomplete the controller still boots
-and logs what it skipped — you can then wire the job up by hand under
-*Manage Jenkins → Credentials*.
+and logs what it skipped - you can then wire the job up by hand under
+*Manage Jenkins -> Credentials*.
 
 The Jenkins workspace is **not** shared with the Docker daemon — every stage
 builds an image from the checkout and runs it, so there is no bind-mount path
