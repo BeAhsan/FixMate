@@ -77,6 +77,28 @@ services:
     environment:
       <<: *app-environment
     depends_on: *app-depends
+    # Overrides the HTTP check inherited from the app anchor. This container
+    # runs queue:work in the foreground instead of nginx, so nothing listens on
+    # port 80 and the inherited check could only ever fail - which reports a
+    # perfectly healthy worker as unhealthy, and in doing so teaches everyone
+    # to ignore the health column.
+    #
+    # Reads PID 1's command line rather than searching the process list with
+    # pgrep. `pgrep -f 'artisan queue:work'` looks right and is not: the shell
+    # running the check has that same string in its own command line, so pgrep
+    # matches the check itself and the container reports healthy with no worker
+    # running at all. Confirmed against the live stack - the pattern matched in
+    # the scheduler container, which runs no queue worker. Reading
+    # /proc/1/cmdline cannot self-match, and asking about PID 1 is the right
+    # question anyway: it is the container's whole job.
+    #
+    # See the note on the scheduler for what this does and does not detect.
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa 'queue:work' /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks: [fixmate]
     deploy:
       resources:
@@ -92,6 +114,22 @@ services:
     environment:
       <<: *app-environment
     depends_on: *app-depends
+    # Same override as the queue worker, for the same reason, and the same
+    # reason for not using pgrep.
+    #
+    # Be clear about what this proves: that the container's main process is
+    # still the scheduler. It does NOT prove the scheduler can reach the
+    # database, or that a job it ran actually succeeded. A scheduler that is
+    # alive but wedged against an unreachable MySQL passes this check. Catching
+    # that needs the process to record its own progress - a heartbeat it
+    # touches and the check reads - which is an application change rather than a
+    # compose one, so it is not faked here.
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa 'schedule:work' /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks: [fixmate]
     deploy:
       resources:
