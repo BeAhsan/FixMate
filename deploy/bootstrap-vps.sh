@@ -188,6 +188,39 @@ fi
 chmod 600 "$ENV_FILE"
 
 # ---------------------------------------------------------------------------
+# 4b. Preflight
+# ---------------------------------------------------------------------------
+# Prove the release can actually be fetched before declaring victory. A private
+# package with no credentials is the most likely failure here, and it is much
+# cheaper to find now than halfway through a deploy.
+log "Checking that ${IMAGE} can be pulled"
+
+REG_USER="$(sed -n 's/^REGISTRY_USER=//p' "$ENV_FILE" | tail -n 1)"
+REG_TOKEN="$(sed -n 's/^REGISTRY_TOKEN=//p' "$ENV_FILE" | tail -n 1)"
+REG_HOST="${IMAGE#*://}"
+REG_HOST="${REG_HOST%%/*}"
+
+if [ -n "$REG_USER" ] && [ -n "$REG_TOKEN" ]; then
+    printf '%s' "$REG_TOKEN" | docker login "$REG_HOST" --username "$REG_USER" --password-stdin >/dev/null 2>&1 \
+        || warn "Could not authenticate to ${REG_HOST}; check REGISTRY_USER and REGISTRY_TOKEN."
+fi
+
+if docker pull --quiet "$IMAGE" >/dev/null 2>&1; then
+    log "Image is available and pulled"
+else
+    warn "Could not pull ${IMAGE}."
+    if [ -z "$REG_USER" ] || [ -z "$REG_TOKEN" ]; then
+        warn "No registry credentials are set and the package looks private."
+        warn "Either make the package public, or add these to ${ENV_FILE} and re-run:"
+        warn "    REGISTRY_USER=<github username>"
+        warn "    REGISTRY_TOKEN=<token with read:packages>"
+    else
+        warn "Credentials are set but the pull still failed. Check the token has read:packages."
+    fi
+    warn "Continuing anyway - deploy.sh will report this again."
+fi
+
+# ---------------------------------------------------------------------------
 # Report
 # ---------------------------------------------------------------------------
 APP_PORT_EFFECTIVE="$(sed -n 's/^APP_PORT=//p' "$ENV_FILE" | tail -n 1)"

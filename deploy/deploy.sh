@@ -100,11 +100,43 @@ wait_for_health() {
     return 1
 }
 
-# 1. Pull -------------------------------------------------------------------
+# 1. Authenticate and pull ---------------------------------------------------
+# The image may sit in a private registry. Credentials come from the VPS .env,
+# never from the pipeline, so the production box holds the only copy of the
+# pull token. The daemon caches them, so later manual `docker compose` commands
+# keep working without a re-login.
+registry_login() {
+    local user token
+    user="$(env_value REGISTRY_USER)"
+    token="$(env_value REGISTRY_TOKEN)"
+
+    if [ -z "$user" ] || [ -z "$token" ]; then
+        return 0
+    fi
+
+    log "Authenticating to the registry as ${user}"
+    if ! printf '%s' "$token" | docker login "$(registry_host)" --username "$user" --password-stdin; then
+        die "Could not authenticate to $(registry_host). Check REGISTRY_USER and REGISTRY_TOKEN in ${APP_DIR}/.env."
+    fi
+}
+
+# ghcr.io/beahsan/fixmate/app:tag -> ghcr.io
+# Done with shell expansion rather than sed: the optional-scheme pattern needs
+# a GNU extension that BSD sed does not have.
+registry_host() {
+    local ref="${IMAGE#*://}"
+    printf '%s' "${ref%%/*}"
+}
+
+registry_login
+
 log "Pulling ${IMAGE}"
 if ! compose pull --quiet; then
     rollback "could not pull ${IMAGE}"
-    die "Image ${IMAGE} could not be pulled. Is it pushed to the registry, and can the VPS reach it?"
+    if [ -z "$(env_value REGISTRY_USER)" ]; then
+        die "Image ${IMAGE} could not be pulled, and no registry credentials are configured. If the package is private, set REGISTRY_USER and REGISTRY_TOKEN in ${APP_DIR}/.env."
+    fi
+    die "Image ${IMAGE} could not be pulled. Is it pushed, and does REGISTRY_TOKEN have read:packages?"
 fi
 
 # 2. Migrate (new code, old containers still serving) -----------------------
