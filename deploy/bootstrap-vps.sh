@@ -126,11 +126,30 @@ mkdir -p "$APP_DIR"
 # Two ways in: run this script from a checkout, or let it clone one. The
 # checkout is preferred because it is whatever you have actually been testing.
 if [ ! -f "$SOURCE_DIR/docker-compose.prod.yml" ]; then
-    [ -n "$REPO_URL" ] || die "Not running from a repository checkout. Pass --repo <git-url>."
-    command -v git >/dev/null 2>&1 || die "git is required to clone the repository."
-    log "Cloning ${REPO_URL}"
-    git clone --depth 1 "$REPO_URL" "$APP_DIR"
-    SOURCE_DIR="$APP_DIR"
+    if [ -n "$REPO_URL" ]; then
+        command -v git >/dev/null 2>&1 || die "git is required to clone the repository."
+        log "Cloning ${REPO_URL}"
+        git clone --depth 1 "$REPO_URL" "$APP_DIR"
+        SOURCE_DIR="$APP_DIR"
+    else
+        # Name the file that is actually absent and give both remedies as
+        # commands that can be pasted as-is. A bare "pass --repo" sends the
+        # reader back to the source to work out which file was left behind.
+        die "$(cat <<EOF
+${SOURCE_DIR}/docker-compose.prod.yml is missing, so there is no orchestration
+file to install. The deploy/ directory alone is not enough - this script copies
+the compose file and the deploy/ directory side by side into ${APP_DIR}.
+
+Copy the compose file across next to deploy/ and run this again:
+
+    scp -rp docker-compose.prod.yml deploy <user>@<host>:/tmp/
+
+Or let the script fetch a checkout itself, instead of copying files:
+
+    bash ./deploy/bootstrap-vps.sh --repo <git-url> --url <app-url>
+EOF
+)"
+    fi
 else
     log "Installing orchestration files into ${APP_DIR}"
     cp "$SOURCE_DIR/docker-compose.prod.yml" "$APP_DIR/"
