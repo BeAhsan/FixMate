@@ -41,7 +41,7 @@ pipeline {
         )
         string(
             name: 'DEPLOY_USER',
-            defaultValue: 'deploy',
+            defaultValue: 'ahsanmanzoor',
             description: 'SSH user on the target VPS.'
         )
         string(
@@ -51,7 +51,7 @@ pipeline {
         )
         string(
             name: 'PLATFORM',
-            defaultValue: 'linux/amd64',
+            defaultValue: 'linux/arm64',
             description: 'Release image platform. Use linux/arm64 for Graviton or Apple silicon hosts.'
         )
         string(
