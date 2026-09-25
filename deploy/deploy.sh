@@ -2,7 +2,7 @@
 #
 # Production deploy. Executed on the target VPS by the Jenkins pipeline:
 #
-#   ./deploy/deploy.sh ghcr.io/owner/fixmate/app:1.4.0
+#   bash ./deploy/deploy.sh ghcr.io/owner/fixmate/app:1.4.0
 #
 # Sequence, chosen so the old release keeps serving traffic for as long as
 # possible:

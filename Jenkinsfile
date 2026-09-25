@@ -180,7 +180,7 @@ pipeline {
 
                             echo "==> Deploying $IMAGE"
                             ssh $SSH_OPTS "$DEPLOY_USER@$DEPLOY_HOST" \
-                                "cd '$DEPLOY_DIR' && ./deploy/deploy.sh '$IMAGE'"
+                                "cd '$DEPLOY_DIR' && bash ./deploy/deploy.sh '$IMAGE'"
                         '''
                     }
                 }

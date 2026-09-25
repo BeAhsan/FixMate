@@ -3,7 +3,7 @@
 # Manually redeploy the previous release on the VPS. Use when a bad release is
 # still the recorded one, or when you need to get off a release quickly:
 #
-#   ./deploy/rollback.sh
+#   bash ./deploy/rollback.sh
 #
 # The Jenkins pipeline already rolls back automatically when a deploy fails, so
 # you only need this for rolling back a deploy that looked healthy.

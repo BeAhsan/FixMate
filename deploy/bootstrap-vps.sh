@@ -3,7 +3,11 @@
 # One-time preparation of a production VPS. Run this by hand exactly once per
 # server; every deploy after that is Jenkins' job.
 #
-#   ./deploy/bootstrap-vps.sh --url https://fixmate.example.com
+#   bash ./deploy/bootstrap-vps.sh --url https://fixmate.example.com
+#
+# Run it through bash explicitly rather than as ./deploy/bootstrap-vps.sh. The
+# executable bit does not survive every copy method, and a script that cannot be
+# run the way its own help text tells you to run it is a bad first impression.
 #
 # It is deliberately idempotent and deliberately refuses to touch an existing
 # .env, because the pipeline treats that file as the one piece of state it
@@ -63,8 +67,14 @@ done
 # re-exec under sudo rather than making the caller remember it.
 if [ "$(id -u)" -ne 0 ]; then
     log "Re-running under sudo"
+    # Explicitly re-invoked through bash rather than run as "$SELF". Executing
+    # the path directly would need the executable bit, and this script gets
+    # copied to places that quietly drop it - an scp without -p, a git
+    # archive, a paste through a Windows share. Being unreadable-as-a-program
+    # is not a reason to fail, so the interpreter is named explicitly and the
+    # bit stops mattering.
     exec sudo env "APP_DIR=$APP_DIR" "BOOTSTRAP_IMAGE=$IMAGE" \
-        "$SELF" ${PASSTHROUGH+"${PASSTHROUGH[@]}"}
+        bash "$SELF" ${PASSTHROUGH+"${PASSTHROUGH[@]}"}
 fi
 
 command -v bash >/dev/null 2>&1 || die "bash is required but not installed."
@@ -252,7 +262,7 @@ $(printf '\033[1;32m==> The server is ready.\033[0m')
 
   Deploy the first release with:
 
-    cd ${APP_DIR} && sudo ./deploy/deploy.sh ${IMAGE}
+    cd ${APP_DIR} && sudo bash ./deploy/deploy.sh ${IMAGE}
 
   Then check it answered:
 
