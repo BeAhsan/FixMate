@@ -156,6 +156,18 @@ random_secret() {
     LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32
 }
 
+env_value() {
+    # Deliberately identical to the one in deploy.sh. A single .env is read by
+    # both scripts, so the two must agree on what a value is: surrounding
+    # whitespace and one layer of matching quotes are not part of it. Without
+    # that, a stray carriage return - which scp-ing an edited file or writing
+    # through a pty will happily introduce - becomes part of a token, and the
+    # failure surfaces as an authentication error against a value that looks
+    # correct on screen.
+    sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$ENV_FILE" | tail -n 1 \
+        | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
+}
+
 if [ -f "$ENV_FILE" ]; then
     warn "${ENV_FILE} already exists and was left untouched."
     warn "Delete it first if you really want a fresh one."
@@ -195,8 +207,8 @@ chmod 600 "$ENV_FILE"
 # cheaper to find now than halfway through a deploy.
 log "Checking that ${IMAGE} can be pulled"
 
-REG_USER="$(sed -n 's/^REGISTRY_USER=//p' "$ENV_FILE" | tail -n 1)"
-REG_TOKEN="$(sed -n 's/^REGISTRY_TOKEN=//p' "$ENV_FILE" | tail -n 1)"
+REG_USER="$(env_value REGISTRY_USER)"
+REG_TOKEN="$(env_value REGISTRY_TOKEN)"
 REG_HOST="${IMAGE#*://}"
 REG_HOST="${REG_HOST%%/*}"
 

@@ -130,11 +130,16 @@ separate, weaker credential than the one that pushes - `read:packages` only -
 and it never leaves the server.
 
 ```sh
-ssh -t ubuntu@92.5.105.170 'sudo tee -a /opt/fixmate/.env >/dev/null' <<'EOF'
-REGISTRY_USER=BeAhsan
-REGISTRY_TOKEN=paste-your-read-only-token-here
-EOF
+ssh -t ubuntu@92.5.105.170 \
+  "printf 'REGISTRY_USER=%s\nREGISTRY_TOKEN=%s\n' 'BeAhsan' 'paste-your-token-here' \
+   | sudo tee -a /opt/fixmate/.env >/dev/null"
 ```
+
+Built with `printf` on the remote side rather than a local heredoc on purpose.
+`ssh -t` allocates a pty, and anything written into one comes back out with
+carriage returns; a heredoc piped into it can leave `\r` at the end of each line
+in `.env`. `printf` writes newlines directly to the pipe the `tee` reads, so the
+file stays byte-clean. The `>/dev/null` keeps the token off your terminal.
 
 Leave those two lines out for a public image and the deploy skips logging in.
 
