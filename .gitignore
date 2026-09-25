@@ -25,3 +25,7 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Jenkins controller secrets, filled in from deploy/jenkins/secrets/config.example
+deploy/jenkins/secrets/*
+!deploy/jenkins/secrets/config.example

@@ -30,6 +30,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # buildx state for the container driver.
       - buildx_state:/root/.docker/buildx
+      # Credentials and job config, read by init.groovy.d/20-create-job.groovy.
+      # Copy secrets/config.example to secrets/config and add the secret files
+      # first, otherwise the controller boots without a job.
+      - ./secrets:/run/secrets/fixmate:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/login >/dev/null || exit 1"]
       interval: 30s

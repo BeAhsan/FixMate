@@ -6,6 +6,13 @@ workflow-aggregator
 
 # withCredentials / withUsernamePassword
 credentials-binding
+credentials
+
+# StringCredentialsImpl, for the known-hosts pin
+plain-credentials
+
+# BasicSSHUserPrivateKey, for the deploy key
+ssh-credentials
 
 # sshagent(sshCredentials: ...)
 ssh-agent
