@@ -13,6 +13,11 @@
 /.vscode
 /.zed
 /auth.json
+# A separate checkout that sits alongside this one. Git cannot track the
+# contents of a nested repository - it stores only a commit reference, so a
+# clone of this repo would get an empty directory and a warning instead of the
+# code - and plain `git add -A` adds it as a gitlink on every commit otherwise.
+/Bonsai-demo
 /node_modules
 /public/build
 /public/fonts-manifest.dev.json
