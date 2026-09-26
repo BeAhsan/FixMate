@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use Database\Factories\UserFactory;
+use Database\Factories\SuperAdminFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,10 +12,12 @@ use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'email', 'password', 'status'])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable
+class SuperAdmin extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
+    /** @use HasFactory<SuperAdminFactory> */
     use HasApiTokens, HasFactory, Notifiable;
+
+    protected $table = 'super_admins';
 
     /**
      * Get the attributes that should be cast.
