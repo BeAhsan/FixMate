@@ -8,35 +8,17 @@
 #
 #   docker build -t fixmate/app:<sha> .
 #
-# Dependencies are installed in throwaway stages and only the compiled output
+# The back end is a JSON API, so there is no front end to compile and no asset
+# pipeline in the image.
+#
+# Dependencies are installed in a throwaway stage and only the compiled output
 # is copied forward, so no build toolchain ends up in the runtime layer.
 
 ARG PHP_VERSION=8.4
-ARG NODE_VERSION=22-alpine
 ARG COMPOSER_VERSION=2.9
 
 # ---------------------------------------------------------------------------
-# Stage 1 - Frontend assets
-# ---------------------------------------------------------------------------
-FROM node:${NODE_VERSION} AS assets
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
-
-COPY vite.config.js .npmrc ./
-COPY resources/ ./resources/
-COPY public/ ./public/
-
-# Vite needs APP_NAME for the compiled bundle.
-ARG APP_NAME="FixMate"
-ENV VITE_APP_NAME="${APP_NAME}"
-
-RUN npm run build
-
-# ---------------------------------------------------------------------------
-# Stage 2 - PHP dependencies
+# Stage 1 - PHP dependencies
 # ---------------------------------------------------------------------------
 FROM composer:${COMPOSER_VERSION} AS vendor
 
@@ -64,7 +46,7 @@ ENV APP_ENV=production \
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
 
 # ---------------------------------------------------------------------------
-# Stage 3 - Runtime
+# Stage 2 - Runtime
 # ---------------------------------------------------------------------------
 FROM php:${PHP_VERSION}-fpm-alpine AS runtime
 
@@ -99,8 +81,7 @@ RUN nginx -t && php-fpm -t
 
 WORKDIR ${APP_DIR}
 
-COPY --chown=www-data:www-data --from=vendor  /app              ${APP_DIR}
-COPY --chown=www-data:www-data --from=assets  /app/public/build ${APP_DIR}/public/build
+COPY --chown=www-data:www-data --from=vendor /app ${APP_DIR}
 
 # A pre-built config cache from the vendor stage would freeze build-time values.
 RUN rm -f bootstrap/cache/config.php bootstrap/cache/routes-*.php \
@@ -119,7 +100,7 @@ ENTRYPOINT ["/usr/local/bin/entrypoint"]
 CMD ["supervisord"]
 
 # ---------------------------------------------------------------------------
-# Stage 4 - CI
+# Stage 3 - CI
 # ---------------------------------------------------------------------------
 # Built only via `docker build --target test`, so the release image stays lean
 # while CI still gets PHPUnit, Pint and the rest of the dev dependencies.
@@ -143,7 +124,7 @@ ENTRYPOINT []
 CMD ["php", "artisan", "test"]
 
 # ---------------------------------------------------------------------------
-# Stage 5 - Default target
+# Stage 4 - Default target
 # ---------------------------------------------------------------------------
 # A bare `docker build .` builds the LAST stage, which would otherwise be the
 # throwaway CI target above. Aliasing runtime here keeps `docker build -t . .`

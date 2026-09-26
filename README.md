@@ -1,7 +1,8 @@
 # FixMate
 
-A Laravel 13 application on PHP 8.4, packaged as a single Docker image and
-deployed to a VPS by a Jenkins pipeline.
+A Laravel 13 JSON API on PHP 8.4, packaged as a single Docker image and
+deployed to a VPS by a Jenkins pipeline. There is no front end in this
+repository: it serves JSON, plus the health endpoint the deploy script polls.
 
 ```
   git push
@@ -25,7 +26,7 @@ web server, the queue worker and the scheduler always run identical code.
 
 | Path | What it is |
 | --- | --- |
-| `Dockerfile` | 4 stages: assets → composer → runtime → CI. `docker build .` defaults to the deployable image. |
+| `Dockerfile` | 4 stages: composer → runtime → CI → production. `docker build .` defaults to the deployable image. |
 | `docker/` | nginx, PHP-FPM, OPcache, supervisor and the container entrypoint. |
 | `docker-compose.yml` | Local dev. Source is bind-mounted, so PHP edits are live. |
 | `docker-compose.prod.yml` | Production. No source on disk, no bind mounts, image pulled from the registry. |
@@ -52,27 +53,20 @@ tokens*, granting `Packages: Read and write`.
 
 ```sh
 composer install
-npm install && npm run build
 cp .env.example .env && php artisan key:generate
 
 docker compose up -d --build
 docker compose exec app php artisan migrate
 ```
 
-The app is on <http://localhost:8000>, MySQL on `127.0.0.1:3306` and Redis on
-`127.0.0.1:6379`.
-
-For CSS/JS hot reload, run the Vite dev server alongside it:
-
-```sh
-docker compose --profile hot up -d
-```
+The API is on <http://localhost:8000>, MySQL on `127.0.0.1:3306` and Redis on
+`127.0.0.1:6379`. `GET /up` is the health check.
 
 Notes:
 
-- The bind mount shadows the image's `vendor/`, so `composer install` and
-  `npm run build` must be run on the host. The `assets` service does this
-  inside the container for the Vite process only.
+- The bind mount shadows the image's `vendor/`, so `composer install` must be
+  run on the host. There are no front-end assets to build, so there is no
+  `npm run build` step.
 - Config is not cached in development, so `.env` and `config/` changes apply on
   the next request.
 
