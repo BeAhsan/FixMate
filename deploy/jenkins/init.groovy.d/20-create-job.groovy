@@ -16,9 +16,9 @@ import hudson.plugins.git.BranchSpec
 import hudson.plugins.git.GitSCM
 import hudson.plugins.git.UserRemoteConfig
 import hudson.plugins.git.extensions.GitSCMExtension
-import hudson.util.Secret
+import com.cloudbees.plugins.credentials.SecretBytes
 import jenkins.model.Jenkins
-import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl
+import org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl
 import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey
 import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey.DirectEntryPrivateKeySource
 import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition
@@ -98,13 +98,21 @@ if (sshKey) {
 
 def knownHosts = read('known-hosts')
 if (knownHosts) {
-    // Wrapped in Secret.fromString because the constructor takes a Secret, not
-    // a String. Groovy may well coerce one to the other here, but relying on
-    // that would make a failure depend on the dispatch version rather than on
-    // the code.
-    upsert('fixmate-known-hosts', new StringCredentialsImpl(
+    // A FileCredentials, not a secret-text one. The Jenkinsfile binds this with
+    // file(credentialsId: 'fixmate-known-hosts', variable: 'KNOWN_HOSTS_FILE'),
+    // which hands the step a path to a real file, and file() rejects anything
+    // that is not a FileCredentials:
+    //
+    //     Credentials 'fixmate-known-hosts' is of type 'Secret text' where
+    //     'org.jenkinsci.plugins.plaincredentials.FileCredentials' was expected
+    //
+    // file() is the right shape for this content, not a workaround. known_hosts
+    // is multi-line, and a secret-text binding would put it in an environment
+    // variable, where every newline and quote becomes the shell's problem. On
+    // disk it is just a file, and install -m 600 reads it as one.
+    upsert('fixmate-known-hosts', new FileCredentialsImpl(
         CredentialsScope.GLOBAL, 'fixmate-known-hosts', 'Pinned host keys for the target VPS',
-        Secret.fromString(knownHosts)))
+        'known_hosts', SecretBytes.fromBytes(knownHosts.getBytes('UTF-8'))))
 } else {
     info 'WARNING: known-hosts missing; deploys will fail host key verification'
 }
