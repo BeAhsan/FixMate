@@ -215,6 +215,15 @@ pipeline {
                             echo "==> Preparing $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR"
                             ssh $SSH_OPTS "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_DIR'"
 
+                            # rsync has to be on both ends. The controller image
+                            # bundles it, a target host does not, and its absence
+                            # surfaces as "error in rsync protocol data stream
+                            # (code 12)" - which never mentions rsync. Checking
+                            # first turns a baffling protocol error into one line
+                            # that says what to install.
+                            ssh $SSH_OPTS "$DEPLOY_USER@$DEPLOY_HOST" "command -v rsync" >/dev/null 2>&1 \
+                                || { echo "rsync is not installed on $DEPLOY_HOST. Run: apt-get install -y rsync" >&2; exit 1; }
+
                             # Only orchestration files travel. Source and secrets stay
                             # out of the VPS: it runs the image, not a checkout.
                             rsync -az --delete \

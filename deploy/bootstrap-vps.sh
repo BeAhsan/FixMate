@@ -116,6 +116,29 @@ fi
 log "Docker $(docker version --format '{{.Server.Version}}') and Compose $(docker compose version --short) are ready"
 
 # ---------------------------------------------------------------------------
+# 1b. rsync
+# ---------------------------------------------------------------------------
+# The Jenkins Deploy stage copies the orchestration files here with rsync, which
+# needs it installed on both ends. The controller image happens to bundle it; a
+# host does not. Without it the build dies with
+#
+#     rsync: connection unexpectedly closed (0 bytes received so far) [sender]
+#     rsync error: error in rsync protocol data stream (code 12)
+#
+# which does not mention rsync anywhere, so the cost of not installing it here
+# is a confusing failure on the first deploy rather than a clear one now.
+if ! command -v rsync >/dev/null 2>&1; then
+    log "Installing rsync"
+    if command -v apt-get >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq rsync
+    fi
+    command -v rsync >/dev/null 2>&1 \
+        || die "rsync is required for Jenkins deploys: apt-get install -y rsync"
+fi
+
+# ---------------------------------------------------------------------------
 # 2. Application directory
 # ---------------------------------------------------------------------------
 mkdir -p "$APP_DIR"
