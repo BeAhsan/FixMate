@@ -82,8 +82,15 @@ pipeline {
                 // the 'local' fallback catches it, and the build carries on
                 // tagging images 'local' - which is the kind of thing that only
                 // becomes visible when two images with the same tag meet.
-                def scmVars = checkout scm
+                // The return value, not env.GIT_COMMIT. The git plugin publishes
+                // GIT_COMMIT to the build environment from the BuildData that
+                // checkout attaches, and that does not reach env within the same
+                // stage that created it. Reading env.GIT_COMMIT here yields null,
+                // the 'local' fallback catches it, and the build carries on
+                // tagging images 'local' - which is the kind of thing that only
+                // becomes visible when two images with the same tag meet.
                 script {
+                    def scmVars = checkout scm
                     env.GIT_SHA = scmVars.GIT_COMMIT ? scmVars.GIT_COMMIT.take(12) : 'local'
                     env.IMAGE = "${env.IMAGE_NAME}:${env.GIT_SHA}"
                     // Local-only, never pushed. The tag uses a dash, not a second
