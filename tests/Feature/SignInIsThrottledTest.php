@@ -134,6 +134,84 @@ class SignInIsThrottledTest extends TestCase
         }
     }
 
+    public function test_one_person_being_throttled_does_not_lock_out_another(): void
+    {
+        User::factory()->create(['email' => 'noisy@example.com', 'password' => bcrypt('pw-noisy')]);
+        User::factory()->create(['email' => 'quiet@example.com', 'password' => bcrypt('pw-quiet')]);
+
+        $maxAttempts = (int) config('auth.login_max_attempts', 5);
+        for ($i = 0; $i < $maxAttempts + 1; $i++) {
+            $this->postJson(self::USER_SIGN_IN, [
+                'email' => 'noisy@example.com',
+                'password' => 'wrong-password',
+            ]);
+        }
+
+        // Somebody hammering one address must not cost an unrelated person the
+        // ability to sign in. This is the denial-of-service case: the throttle
+        // exists to slow guessing, and a shared bucket would let one attacker
+        // lock out every customer on the platform.
+        $this->postJson(self::USER_SIGN_IN, [
+            'email' => 'quiet@example.com',
+            'password' => 'pw-quiet',
+        ])->assertOk();
+    }
+
+    public function test_the_throttle_response_tells_the_person_how_long_to_wait(): void
+    {
+        $maxAttempts = (int) config('auth.login_max_attempts', 5);
+        for ($i = 0; $i < $maxAttempts + 1; $i++) {
+            $this->failedUserAttempt();
+        }
+
+        $response = $this->failedUserAttempt();
+
+        $response->assertStatus(429);
+
+        // A person who is refused through no fault of their own is owed
+        // something better than "Too Many Attempts." They cannot act on that:
+        // it does not say when to come back, so they either give up or keep
+        // trying and stay refused. Laravel's default also carries a stack trace
+        // in debug and a bare string otherwise, so it is rendered explicitly.
+        $body = $response->json();
+
+        $this->assertArrayHasKey('retry_after', $body, 'the response must state when to retry');
+        $this->assertIsInt($body['retry_after']);
+        $this->assertGreaterThan(0, $body['retry_after']);
+
+        $this->assertMatchesRegularExpression(
+            '/wait/i',
+            $body['message'],
+            'the message must say the person has to wait, not merely that attempts were too many'
+        );
+
+        // The stated wait and the actual hold must agree, or the message is a lie
+        // the person acts on.
+        $this->assertSame(
+            (string) $body['retry_after'],
+            (string) $response->headers->get('Retry-After'),
+            'the body and the Retry-After header must state the same wait'
+        );
+    }
+
+    public function test_the_throttle_response_carries_no_stack_trace(): void
+    {
+        $maxAttempts = (int) config('auth.login_max_attempts', 5);
+        for ($i = 0; $i < $maxAttempts + 1; $i++) {
+            $this->failedUserAttempt();
+        }
+
+        $body = $this->failedUserAttempt()->json();
+
+        // Every other refusal on this API is a clean, declared shape. A throttle
+        // that leaks file paths and a call stack is a different contract by
+        // accident, and an attacker gets a map of the deployment from it.
+        $this->assertSame(['message', 'retry_after'], array_keys($body));
+        $this->assertArrayNotHasKey('trace', $body);
+        $this->assertArrayNotHasKey('file', $body);
+        $this->assertArrayNotHasKey('line', $body);
+    }
+
     public function test_every_account_type_has_its_own_limiter_registered(): void
     {
         // Four account types are specified; all four must have a limiter, or a

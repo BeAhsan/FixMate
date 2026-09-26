@@ -25,6 +25,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Sign-in rate limiting
+    |--------------------------------------------------------------------------
+    |
+    | Failed sign-in attempts allowed per address, per IP address, per minute.
+    | Counted separately for each account type, so exhausting one does not lock
+    | the same address out of the others. See AppServiceProvider for the
+    | limiters themselves, which are named per account type.
+    |
+    | This is configuration rather than a constant because the right number
+    | depends on deployment: a private network and the public internet do not
+    | want the same threshold, and a threshold that cannot be changed without a
+    | code edit will be wrong for one of them.
+    |
+    */
+
+    'login_max_attempts' => (int) env('AUTH_LOGIN_MAX_ATTEMPTS', 5),
+
+    'login_decay_minutes' => (int) env('AUTH_LOGIN_DECAY_MINUTES', 1),
+
+    /*
+    |--------------------------------------------------------------------------
     | Authentication Guards
     |--------------------------------------------------------------------------
     |

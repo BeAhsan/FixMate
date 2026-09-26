@@ -8,6 +8,7 @@ use App\Domain\IdentityAndAccess\Services\AuthenticationService;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentEndUserRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentWorkerRepository;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -32,14 +33,12 @@ class AppServiceProvider extends ServiceProvider
     ];
 
     /**
-     * Failed sign-in attempts allowed per address per IP, per minute.
-     *
-     * Configurable rather than a constant because the right number depends on
-     * deployment - a private network and the public internet do not want the
-     * same threshold - and because a threshold nobody can change without a code
-     * edit is a threshold that will be wrong for one of them.
+     * Fallbacks for the sign-in rate limit, used only if the configuration is
+     * missing. The configured values in config/auth.php are the real ones.
      */
     private const LOGIN_MAX_ATTEMPTS = 5;
+
+    private const LOGIN_DECAY_MINUTES = 1;
 
     /**
      * Register any application services.
@@ -84,12 +83,57 @@ class AppServiceProvider extends ServiceProvider
     private function configureLoginRateLimiters(): void
     {
         $maxAttempts = (int) config('auth.login_max_attempts', self::LOGIN_MAX_ATTEMPTS);
+        $decayMinutes = max(1, (int) config('auth.login_decay_minutes', self::LOGIN_DECAY_MINUTES));
 
         foreach (self::LOGIN_LIMITERS as $limiter) {
-            RateLimiter::for($limiter, function (Request $request) use ($maxAttempts): Limit {
-                return Limit::perMinute($maxAttempts)->by($this->loginThrottleKey($request));
+            RateLimiter::for($limiter, function (Request $request) use ($maxAttempts, $decayMinutes): Limit {
+                return Limit::perMinute($maxAttempts, $decayMinutes)
+                    ->by($this->loginThrottleKey($request))
+                    ->response($this->throttledResponse(...));
             });
         }
+    }
+
+    /**
+     * The response a throttled sign-in gets.
+     *
+     * This is the one refusal on the API that a person receives through no
+     * fault of their own - they mistyped a password, or someone else is guessing
+     * at their address - so it is the one refusal that owes them something
+     * useful. Laravel's default is "Too Many Attempts.", which says what
+     * happened but not when they can try again, so they either give up or keep
+     * returning and stay refused. In debug it also carries a full stack trace,
+     * which hands an attacker a map of the deployment; the shape here is
+     * declared, so the response does not change shape with the environment.
+     *
+     * The wait is read from the headers the middleware computed, so the message
+     * cannot drift from the behaviour it describes.
+     */
+    private function throttledResponse(Request $request, array $headers): JsonResponse
+    {
+        $seconds = (int) ($headers['Retry-After'] ?? 0);
+
+        return response()->json([
+            'message' => 'Too many sign-in attempts. Please wait '
+                .$this->humaniseWait($seconds).' before trying again.',
+            'retry_after' => $seconds,
+        ], 429, $headers);
+    }
+
+    /**
+     * The wait in words, because a bare number is not something a person can act
+     * on. Rounded to whole minutes above a minute, since "47 seconds" is false
+     * precision from a counter that only refreshes on the next attempt.
+     */
+    private function humaniseWait(int $seconds): string
+    {
+        if ($seconds < 60) {
+            return $seconds.' second'.($seconds === 1 ? '' : 's');
+        }
+
+        $minutes = (int) ceil($seconds / 60);
+
+        return $minutes.' minute'.($minutes === 1 ? '' : 's');
     }
 
     /**
