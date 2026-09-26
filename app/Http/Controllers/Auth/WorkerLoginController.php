@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Application\IdentityAndAccess\DTOs\SignInRequest as SignInDto;
+use App\Application\IdentityAndAccess\Exceptions\AccountSuspended;
+use App\Application\IdentityAndAccess\Exceptions\InvalidCredentials;
 use App\Application\IdentityAndAccess\UseCases\SignInWorker;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\SignInRequest;
@@ -21,6 +23,15 @@ use Illuminate\Validation\ValidationException;
  */
 class WorkerLoginController extends Controller
 {
+    /**
+     * The neutral key every refusal is filed under.
+     *
+     * Not 'email' or 'password': naming one of the two submitted fields tells
+     * the person which field the server judged, which is more than an
+     * indistinguishable refusal should give away. Matches UserLoginController.
+     */
+    private const REFUSAL_KEY = 'credentials';
+
     public function __construct(
         private SignInWorker $signInUseCase,
     ) {}
@@ -36,11 +47,21 @@ class WorkerLoginController extends Controller
         try {
             // Execute use case
             $response = $this->signInUseCase->execute($dto);
-        } catch (\InvalidArgumentException|\DomainException $e) {
-            // Invalid credentials or suspended account - 422 with validation error format
+        } catch (AccountSuspended $e) {
+            // A suspended worker is told plainly, with a real next step. Safe to
+            // do here only because the use case settles the password first, so
+            // this response is unreachable without the correct password.
             throw ValidationException::withMessages([
-                'email' => [$e->getMessage()],
-            ]);
+                self::REFUSAL_KEY => [$e->getMessage()],
+            ])->status(403);
+        } catch (InvalidCredentials $e) {
+            // Every other refusal - unknown address, wrong password, an account
+            // in another store, a state that is neither active nor suspended -
+            // is indistinguishable, and filed under a neutral key so the error
+            // does not point at one of the two submitted fields.
+            throw ValidationException::withMessages([
+                self::REFUSAL_KEY => [$e->getMessage()],
+            ])->status(422);
         }
 
         // Find the Eloquent worker using the repository (case-insensitive)

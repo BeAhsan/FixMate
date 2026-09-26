@@ -19,13 +19,21 @@ class AuthenticationServiceTest extends TestCase
 {
     private const PASSWORD = 'correct-horse-battery-staple';
 
+    /**
+     * The lowest cost bcrypt allows. A real deployment uses a higher one, but a
+     * unit test asserting *which* branch was taken does not need the work, and
+     * the decoy-hash equaliser is exercised by the feature test at the real cost
+     * where the timing actually matters.
+     */
+    private const TEST_COST = 4;
+
     private AuthenticationService $service;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->service = new AuthenticationService;
+        $this->service = new AuthenticationService(self::TEST_COST);
     }
 
     private static function hash(): string

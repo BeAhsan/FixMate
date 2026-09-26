@@ -4,6 +4,8 @@ namespace App\Application\IdentityAndAccess\UseCases;
 
 use App\Application\IdentityAndAccess\DTOs\SignInRequest;
 use App\Application\IdentityAndAccess\DTOs\SignInResponse;
+use App\Application\IdentityAndAccess\Exceptions\AccountSuspended;
+use App\Application\IdentityAndAccess\Exceptions\InvalidCredentials;
 use App\Domain\IdentityAndAccess\Repositories\WorkerRepository;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
 
@@ -36,16 +38,21 @@ class SignInWorker
         // Find worker by email, in the workers table only
         $worker = $this->workerRepository->findByEmail($request->email);
 
-        // Verify credentials using domain service
+        // The order of these two checks is the security property, not a
+        // stylistic choice. Credentials are settled first and the account's
+        // state is only consulted afterwards, so the plain "your account is
+        // suspended" refusal is unreachable without the correct password. The
+        // end user path reasons identically; see SignInEndUser for why.
         if (! $this->authService->verifyCredentials($worker?->passwordHash, $request->password)) {
-            // Use same exception for all failure cases to prevent user enumeration
-            throw new \InvalidArgumentException('The provided credentials are incorrect.');
+            throw new InvalidCredentials(InvalidCredentials::MESSAGE);
         }
 
-        // At this point, worker is not null and credentials are valid
-        // Check if account is suspended
-        if ($this->authService->isAccountSuspended($worker?->status)) {
-            throw new \DomainException('Your account has been suspended. Please contact support.');
+        if (! $this->authService->isAccountActive($worker?->status)) {
+            if ($this->authService->isAccountSuspended($worker?->status)) {
+                throw new AccountSuspended(AccountSuspended::MESSAGE);
+            }
+
+            throw new InvalidCredentials(InvalidCredentials::MESSAGE);
         }
 
         // Return worker data for token creation

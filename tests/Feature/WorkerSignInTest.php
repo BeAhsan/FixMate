@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Application\IdentityAndAccess\Exceptions\InvalidCredentials;
 use App\Models\User;
 use App\Models\Worker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -146,9 +147,13 @@ class WorkerSignInTest extends TestCase
         ]);
 
         $response->assertUnprocessable();
-        $response->assertJsonValidationErrors(['email']);
+        // The refusal is filed under a neutral key rather than 'email'. Pointing
+        // the error at one of the two submitted fields tells the person which
+        // field the server thought was wrong, which is more than an
+        // indistinguishable refusal should give away.
+        $response->assertJsonValidationErrors(['credentials']);
         $this->assertStringContainsString(
-            'The provided credentials are incorrect.',
+            InvalidCredentials::MESSAGE,
             $response->json('message')
         );
         $this->assertDatabaseCount('personal_access_tokens', 0);
@@ -176,7 +181,7 @@ class WorkerSignInTest extends TestCase
 
         $response->assertUnprocessable();
         $this->assertStringContainsString(
-            'The provided credentials are incorrect.',
+            InvalidCredentials::MESSAGE,
             $response->json('message')
         );
         $this->assertDatabaseCount('personal_access_tokens', 0);
@@ -222,7 +227,11 @@ class WorkerSignInTest extends TestCase
             'password' => $password,
         ]);
 
-        $response->assertUnprocessable();
+        // 403, not 422, matching the end user path. A suspension is a real
+        // condition with a real next step rather than a malformed submission, and
+        // the two account types must answer identically or the difference between
+        // the endpoints becomes a signal in itself.
+        $response->assertForbidden();
         $this->assertStringContainsString('suspended', $response->json('message'));
         $this->assertDatabaseCount('personal_access_tokens', 0);
     }
