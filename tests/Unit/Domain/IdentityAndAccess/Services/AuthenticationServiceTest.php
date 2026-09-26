@@ -2,7 +2,6 @@
 
 namespace Tests\Unit\Domain\IdentityAndAccess\Services;
 
-use App\Domain\IdentityAndAccess\Entities\EndUser;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
 use App\Domain\IdentityAndAccess\ValueObjects\AccountStatus;
 use PHPUnit\Framework\Attributes\Test;
@@ -29,27 +28,21 @@ class AuthenticationServiceTest extends TestCase
         $this->service = new AuthenticationService;
     }
 
-    private static function user(AccountStatus $status = AccountStatus::Active): EndUser
+    private static function hash(): string
     {
-        return EndUser::fromPersistence(
-            id: 1,
-            name: 'Test Person',
-            email: 'person@example.com',
-            passwordHash: password_hash(self::PASSWORD, PASSWORD_BCRYPT),
-            status: $status->value,
-        );
+        return password_hash(self::PASSWORD, PASSWORD_BCRYPT);
     }
 
     #[Test]
     public function it_accepts_the_correct_password(): void
     {
-        $this->assertTrue($this->service->verifyCredentials(self::user(), self::PASSWORD));
+        $this->assertTrue($this->service->verifyCredentials(self::hash(), self::PASSWORD));
     }
 
     #[Test]
     public function it_rejects_an_incorrect_password(): void
     {
-        $this->assertFalse($this->service->verifyCredentials(self::user(), 'wrong-password'));
+        $this->assertFalse($this->service->verifyCredentials(self::hash(), 'wrong-password'));
     }
 
     #[Test]
@@ -58,7 +51,7 @@ class AuthenticationServiceTest extends TestCase
         // The property that stops the sign-in endpoint being an account-existence
         // oracle. Both cases return false, and neither leaks why.
         $unknownAddress = $this->service->verifyCredentials(null, self::PASSWORD);
-        $wrongPassword = $this->service->verifyCredentials(self::user(), 'wrong-password');
+        $wrongPassword = $this->service->verifyCredentials(self::hash(), 'wrong-password');
 
         $this->assertFalse($unknownAddress);
         $this->assertFalse($wrongPassword);
@@ -68,7 +61,7 @@ class AuthenticationServiceTest extends TestCase
     #[Test]
     public function an_empty_password_is_refused(): void
     {
-        $this->assertFalse($this->service->verifyCredentials(self::user(), ''));
+        $this->assertFalse($this->service->verifyCredentials(self::hash(), ''));
     }
 
     #[Test]
@@ -77,20 +70,16 @@ class AuthenticationServiceTest extends TestCase
         // Note: a suspended account can still have a *correct* password. Status is
         // a separate rule from the credential check, and conflating the two is how
         // "suspended" ends up meaning "wrong password" in the response.
-        $suspended = self::user(AccountStatus::Suspended);
-
-        $this->assertTrue($this->service->verifyCredentials($suspended, self::PASSWORD));
-        $this->assertFalse($this->service->isAccountActive($suspended));
-        $this->assertTrue($this->service->isAccountSuspended($suspended));
+        $this->assertTrue($this->service->verifyCredentials(self::hash(), self::PASSWORD));
+        $this->assertFalse($this->service->isAccountActive(AccountStatus::Suspended));
+        $this->assertTrue($this->service->isAccountSuspended(AccountStatus::Suspended));
     }
 
     #[Test]
     public function an_active_account_is_active_and_not_suspended(): void
     {
-        $active = self::user();
-
-        $this->assertTrue($this->service->isAccountActive($active));
-        $this->assertFalse($this->service->isAccountSuspended($active));
+        $this->assertTrue($this->service->isAccountActive(AccountStatus::Active));
+        $this->assertFalse($this->service->isAccountSuspended(AccountStatus::Active));
     }
 
     #[Test]
