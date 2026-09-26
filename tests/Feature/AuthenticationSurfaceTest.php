@@ -95,6 +95,8 @@ class AuthenticationSurfaceTest extends TestCase
             ->all();
 
         $this->assertSame([
+            'api/v1/identity/admins/sign-in',
+            'api/v1/identity/super-admins/sign-in',
             'api/v1/identity/users/sign-in',
             'api/v1/identity/workers/sign-in',
         ], $authenticationRoutes);
