@@ -5,16 +5,18 @@ the code, the code wins and the README is named as the stale one.
 
 ## What this repo is
 
-- A Laravel 13 app (`laravel/framework` 13.33) whose **application code is still
-  the untouched skeleton**: `app/` holds three files, `routes/web.php` has one
-  route, and `tests/` has the two example tests. There is no domain logic yet —
-  do not assume a feature area, model or endpoint exists.
+- A Laravel 13 app (`laravel/framework` 13.33) that is a **JSON API and nothing
+  else**. There is no Blade, no Vite, no npm, and no route that renders a page:
+  `routes/api.php` is the only route file, `resources/` does not exist, and
+  there is no domain logic yet — do not assume a feature area, model or
+  endpoint exists.
 - **The actual work in this repo is infrastructure.** Dockerfile, `docker/`,
   `docker-compose*.yml`, `Jenkinsfile` and `deploy/` are the substance; the app
   is the payload. Read those before forming an opinion about the project.
 - **One image serves three roles** — web (nginx + PHP-FPM), queue worker and
   scheduler. Only the command differs, so the tag that was tested is the tag
-  that ships.
+  that ships. nginx is still the HTTP server even though it no longer serves a
+  page: it routes every path to `public/index.php` and hands it to PHP-FPM.
 - **Production is Docker on a VPS, deployed by Jenkins.** Not Laravel Cloud,
   even though `boost.json` sets `"cloud": true` and a `deploying-to-cloud` skill
   is installed. Ignore both; nothing here touches `cloud.laravel.com`.
@@ -36,6 +38,26 @@ show `--exclude '.env'` is what saves the VPS copy).
   changes nothing that runs.
 - They are absent from `.dockerignore`, so they do travel in the build context and
   into the image. Harmless, but expect to see them there.
+
+### `/up` is the last HTML response, and it does not come from this app's code
+
+`bootstrap/app.php` registers it with `withRouting(health: '/up')`, and the
+route the framework builds for that is unusual in two ways:
+
+- It is registered with **no middleware group at all** — not `web`, not `api`.
+  So deleting `routes/web.php` and the `web:` argument cannot break it, and
+  forcing JSON in the exception handler cannot either.
+- The closure behind it renders
+  `vendor/laravel/framework/src/Illuminate/Foundation/resources/health-up.blade.php`
+  — a **Blade view shipped inside the framework package** — unless the request
+  sends `Accept: application/json`, in which case it returns
+  `{"status":"up"}`. `curl` sends no `Accept`, so a plain health check gets
+  that HTML page with a 200.
+
+That is why "the back end serves no HTML" has exactly one exception, and why
+`tests/Feature/ApiSurfaceTest.php` asserts only the status of `/up` and never
+its content type. `deploy/deploy.sh`, the container `HEALTHCHECK` and the
+pipeline's smoke check all poll it, so it must keep answering 200 unchanged.
 
 ### Console output is JSON, not test output
 
@@ -112,25 +134,24 @@ it in both places or neither.
 
 ### Dockerfile stages
 
-`assets` → `vendor` → `runtime` → `test` → `production`. A bare `docker build .`
-builds the **last** stage, which is aliased `production` and is the same image as
+`vendor` → `runtime` → `test` → `production`. A bare `docker build .` builds
+the **last** stage, which is aliased `production` and is the same image as
 `runtime` — that alias exists so the plain build produces the deployable image
 rather than the throwaway CI target. `--target runtime` and `--target test` both
-work.
+work. There is no `assets` stage and no `ARG NODE_VERSION`: the back end has no
+front end to compile.
 
 ## Local development
 
-Run `composer install` and `npm run build` **on the host** before
-`docker compose up -d --build`. The dev bind mount (`.:/var/www/html`) shadows
-the image's `vendor/` and `public/build`, so anything installed inside the
-container is invisible to the app.
+Run `composer install` **on the host** before `docker compose up -d --build`.
+The dev bind mount (`.:/var/www/html`) shadows the image's `vendor/`, so
+anything installed inside the container is invisible to the app.
 
 ```sh
-composer install && npm install && npm run build
+composer install
 cp .env.example .env && php artisan key:generate
 docker compose up -d --build
 docker compose exec app php artisan migrate
-docker compose --profile hot up -d        # Vite dev server for CSS/JS
 ```
 
 Config is **not** cached in development, so `.env` and `config/` edits apply on
@@ -185,16 +206,22 @@ never enter an image layer.
   a Declarative `environment {}` block cannot reference a variable defined
   alongside it.
 
-## Frontend
+## The API surface
 
-- **Vite 8 + Tailwind 4, configured CSS-first.** `resources/css/app.css` opens
-  with `@import 'tailwindcss'` and a `@theme` block. There is no
-  `tailwind.config.js`; reaching for one is the wrong instinct.
-- **Two entry points only**, both declared in `vite.config.js`:
-  `resources/css/app.css` and `resources/js/app.js`. A new entry point goes in
-  that `input` array.
-- **Fonts are self-hosted** by the Vite plugin (`bunny('Instrument Sans')`), not
-  a CDN link, so there is nothing to add to a layout for them.
+- **`routes/api.php` is the only route file.** `bootstrap/app.php` mounts it
+  with the `api` middleware group under Laravel's default `api` prefix — still
+  not versioned. The spec wants a versioned prefix, but that decision belongs
+  to whichever ticket adds the first real route group, not to this one.
+- **There is no front end in this repository.** No `package.json`, no npm
+  lockfile, no `resources/`, no `public/build`, no Vite. The four applications
+  in the spec arrive in a later ticket and are the only thing that brings npm
+  back. Do not add a build step to the image.
+- **`config/view.php` and `storage/framework/views` are kept on purpose.** The
+  framework's `ViewServiceProvider` is in the default provider list and its
+  `view.finder` takes `array $paths`, so deleting the config turns a harmless
+  'no views' situation into a `TypeError` wherever `view` is resolved — which
+  includes `laravel/mcp` calling `loadViewsFrom`. Deleting them buys nothing;
+  the `resources/` directory is already gone, so no view can be found anyway.
 
 ## Agent skills
 
