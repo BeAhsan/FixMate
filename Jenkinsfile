@@ -148,7 +148,12 @@ pipeline {
                     credentialsId: 'fixmate-known-hosts',
                     variable: 'KNOWN_HOSTS_FILE'
                 )]) {
-                    sshagent(sshCredentials: ['fixmate-ssh-key']) {
+                    // The parameter is credentials, singular-named. It reads as
+                    // though it should be sshCredentials, and that is exactly the
+                    // name that gets written from memory - the step then fails to
+                    // compile with "Invalid parameter", which surfaces as a build
+                    // that never runs a stage rather than as a config error.
+                    sshagent(credentials: ['fixmate-ssh-key']) {
                         sh '''
                             set -eu
 
