@@ -15,3 +15,14 @@
 | middleware and throttle; the Identity and Access context is the first.
 |
 */
+
+use App\Http\Controllers\Auth\UserLoginController;
+
+// Identity and Access context routes
+Route::prefix('v1/identity')
+    ->middleware(['api'])
+    ->group(function () {
+        // End user sign-in (users guard)
+        Route::post('/users/sign-in', UserLoginController::class)
+            ->name('users.signin');
+    });
