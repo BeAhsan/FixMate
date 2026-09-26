@@ -8,12 +8,13 @@ independent flows that share no state — the second of the three security
 properties, and the one where a scoping mistake silently changes the wrong
 person's password.
 
-**Fortify implementation, concretely (from research):**
-- Fortify does **not** ship `ResetUserPassword` or `UpdateUserPassword` classes — it publishes *stubs* implementing `ResetsUserPasswords` and `UpdatesUserPasswords` interfaces
-- The published `UpdateUserPassword` stub hardcodes validation rule `current_password:web` — **each account type needs its own implementation** with the correct guard (`current_password:workers`, `current_password:admins`, etc.)
-- Four password brokers in `config/auth.php`, each with its own provider (`users`, `workers`, `admins`, `super_admins`) — single shared `password_reset_tokens` table works because provider isolation prevents cross-resolution
-- Explicit broker selection in controllers: `Password::broker('workers')->sendResetLink(...)` — no config mutation
-- `Features::resetPasswords()` is the only Fortify feature enabled
+**Implementation, concretely (revised — Fortify has since been removed):**
+- Four password brokers already exist in `config/auth.php`, one per account type, each with its own provider (`users`, `workers`, `admins`, `super_admins`). Confirm `super_admins` is present; the others are.
+- **Each store has its own reset-token table** (`password_reset_tokens`, `worker_password_reset_tokens`, `admin_password_reset_tokens`, and the super-admin equivalent). Isolation comes from the broker's provider, and separate tables make a cross-store token physically impossible rather than merely unlikely.
+- Select the broker explicitly: `Password::broker('workers')`. Never mutate `config('auth.passwords')` at runtime.
+- Use core Laravel's `Password` broker. There is no Fortify involvement and no `ResetsUserPasswords` interface to implement.
+- Delivery is a problem to solve, not skip: there is no mail transport configured. Whatever you choose, a reset link that cannot be delivered in a test is not a demonstrated flow. Say plainly in your report how delivery is faked, and make sure the test does not depend on a real mail server.
+- Throttle reset requests per account type, as sign-in is. A reset endpoint that is not throttled is a mail-flooding vector and an enumeration aid.
 
 **Blocked by:** 06 (worker sign-in), 07 (staff sign-in)
 
@@ -27,5 +28,6 @@ person's password.
 - [ ] The new password is checked for acceptability before it is accepted
 - [ ] Signing in with the new password works, and the old one no longer does
 - [ ] A person holding two account types can reset each independently
-- [ ] Each of the four flows uses its own `ResetsUserPasswords`/`UpdatesUserPasswords` implementation with the correct guard in validation
+- [ ] A reset token issued for one store cannot be redeemed against another store
+- [ ] Reset requests are throttled per account type
 - [ ] Each of the four flows is covered independently
