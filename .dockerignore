@@ -43,6 +43,8 @@ README.md
 AGENTS.md
 CLAUDE.md
 *.md
+/.opencode
+/.claude
 
 .DS_Store
 Thumbs.db
