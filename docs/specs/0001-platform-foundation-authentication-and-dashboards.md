@@ -32,11 +32,10 @@ Stand up a platform foundation, deliberately narrow, that the eventual domain
 features can be built on without rework:
 
 **A Laravel back end that is an API and nothing else.** Blade, the Vite asset
-pipeline, and the example view are removed. Fortify provides the authentication
-backend and Sanctum provides the tokens that authenticate API requests — the
-pairing Laravel's own documentation recommends for a single-page application on a
-Laravel API. The back end is organised as Domain-Driven Design with one real
-bounded context — Identity and Access — established as the worked example that
+pipeline, and the example view are removed. Four guards, one per account type,
+supply the authentication backend, and Sanctum supplies the tokens that
+authenticate API requests. The back end is organised as Domain-Driven Design with
+one real bounded context — Identity and Access — established as the worked example that
 later contexts will copy. API resources, not models, are what cross the HTTP
 boundary, so the shape of a response is a deliberate decision rather than a
 side effect of a database table.
@@ -222,68 +221,59 @@ Shared internal packages:
 
 ### Authentication
 
-**Sanctum for tokens, Fortify for the credential lifecycle.** These are
-complementary, not alternatives. Sanctum issues and revokes the tokens that
-authenticate API requests. Fortify supplies the authentication backend —
-credential checking, login throttling, username canonicalisation, and password
-reset token handling. This is the pairing Laravel's own documentation recommends
-for a single-page application backed by a Laravel API.
+**Sanctum for tokens, and the framework for everything else.** Sanctum issues and
+revokes the tokens that authenticate API requests. Credential checking, login
+throttling, username canonicalisation, and password reset tokens are all core
+Laravel — the guard and provider configuration, `RateLimiter`, and the `Password`
+broker.
 
-**Fortify is used as a library of actions, not as a route registrar.** This is
-the one significant constraint in this design, and it comes from the four-table
-decision rather than from Fortify. Fortify's configuration is a single global
-file holding a single user model, a single guard, a single path prefix, and one
-set of routes. It is built to serve one account type. So Fortify is installed
-with its views disabled and only the features this work needs enabled, its route
-registration is suppressed via `Fortify::ignoreRoutes()`, and the four sign-in
-endpoints and their password reset flows are registered by this application —
-each bound to its own guard, each reusing Fortify's actions for the parts that
-are genuinely reusable.
+**Laravel Fortify was evaluated and removed.** It was originally adopted for the
+credential lifecycle, on the reasoning that four unguarded sign-in endpoints is a
+brute-force amplifier and Fortify supplies throttling. Implementation showed
+otherwise. Fortify's own service provider is auto-discovered, so it registered
+`POST /login`, `POST /logout`, `POST /forgot-password`, `POST /reset-password`
+and two confirm-password routes on a back end that is supposed to be a pure JSON
+API — session-and-cookie authentication against the users table, alongside the
+four token-based sign-in endpoints. Those routes returned a 500 only because the
+rate limiter they referenced was never registered, which was an accident of
+omission rather than a decision: registering the application's own
+`FortifyServiceProvider` — the obvious next step, since the file existed and was
+written for that purpose — would have made them work. Suppressing them needed
+`Fortify::ignoreRoutes()`, the application's provider was never registered at
+all, and the per-guard action bindings were dead code used by nothing.
 
-**The throttle key must include the guard.** Fortify's `LoginRateLimiter`
-builds its key from `email|ip` and does not include the guard, so four endpoints
-on four guards would share one rate-limit bucket by default — an attacker could
-trip one door and lock out all four account types. A `GuardAwareLoginRateLimiter`
-subclass prefixes the key with the guard name (`users|email|ip`,
-`workers|email|ip`, etc.), so the four doors throttle independently. This is the
-one place the four-guard requirement changes the off-the-shelf behaviour, and it
-is covered by its own test (ticket 05).
+What Fortify was wanted for turned out to be available without it. Throttling is
+`RateLimiter::for()` plus `->middleware('throttle:...')`; username
+canonicalisation is `Str::lower()`; password reset tokens are the `Password`
+broker. The spec named this outcome as its own fallback before any code existed,
+and the hand-rolled sign-in path that replaced it is the layered back end the
+rest of this document actually wanted.
 
-**Fortify does not ship password-reset action classes.** It publishes *stubs*
-for `ResetUserPassword` and `UpdateUserPassword` that implement the
-`ResetsUserPasswords` and `UpdatesUserPasswords` interfaces — those stubs are
-your code, not Fortify's. The stub `UpdateUserPassword` hardcodes the validation
-rule `current_password:web`, so each account type needs its own implementation
-with the correct guard. This is why the four password-reset flows are separate
-implementations rather than one reused class, and it is a smaller code footprint
-than it sounds.
+**Login throttling, and why the four doors are counted separately.** Each sign-in
+route carries a `throttle:` middleware naming its own limiter, and the key is
+the lower-cased address plus the IP. Two properties matter and both are asserted
+from outside.
 
-**Per-request guard mutation is a trap.** Mutating `config('fortify.guard')` in
-middleware works in a single-threaded request but breaks under Octane or queue
-workers where global config is shared across concurrent requests. The correct
-pattern is explicit DI: four controller classes, each constructed with
-`Auth::guard('users')`, `Auth::guard('workers')`, etc., and their own
-`LoginRateLimiter` instance. The one adapter boundary stays one blast radius.
+- *The four endpoints are limited independently.* An attacker exhausting the
+  worker sign-in must not lock the same address out of the customer sign-in — that
+  would be a denial of service the throttling exists to prevent. The separation
+  comes from the limiter *name*, since Laravel stores the counter under it. This
+  is worth stating because the obvious implementation, one limiter keyed on
+  address and IP, is wrong here and would look correct.
+- *Case variation is not a fresh allowance.* Sign-in is case-insensitive, so the
+  key is normalised; otherwise alternating the case of one address would defeat
+  the limit.
 
-**What this buys.** Login throttling, which is the reason to want Fortify here
-at all. Four unguarded sign-in endpoints is a brute-force amplifier, and
-throttling is the cheapest meaningful defence. Username canonicalisation comes
-with it, so an address typed in different case reaches the same account.
-Everything else Fortify offers — registration, email verification, two-factor
-authentication, password confirmation — is out of scope, and its features are
-switched off rather than left installed and unused.
+**Address and IP together, not either alone.** Many addresses from one connection
+is limited, and one address from many connections is limited too. The attempt
+ceiling is configuration rather than a constant, because a private network and
+the public internet do not want the same threshold.
 
-**How Fortify is configured, concretely.** Four guards are registered in
-`config/auth.php` — one per account type, each with its own provider and its own
-model, so a credential is only ever checked against the table behind the guard
-that the request arrived on. Fortify's `views` option is `false`, which disables
-its view routes; that is the mode intended for a JavaScript client, and it is
-what keeps Blade out of the back end. A single `FortifyServiceProvider` calls
-`Fortify::ignoreRoutes()`, disables every feature except `resetPasswords()`,
-binds four `GuardAwareLoginRateLimiter` singletons, and wires the per-guard
-action implementations. A single adapter is the only code in the application
-that touches Fortify's action classes, which is what gives the internal-API
-dependency named above one blast radius rather than four.
+**Nothing else is a credential store.** The four credential stores are separated
+by four guards, each with its own provider and model. Sanctum's polymorphic token
+owner column supports all four, so they share one token table and one revocation
+mechanism, and a token cannot authenticate as an account type it was not issued
+for.
 
 **Four account types, four credential stores.** End users, workers,
 administrators and super administrators each have their own table, their own
@@ -437,14 +427,12 @@ did survives. The account type names, the abilities, and the mapping from
 application to account type are configuration rather than migration constants, so
 that the four applications agree with the back end about which is which.
 
-**Fortify's published migration is not used.** `fortify:install` publishes a
-migration adding `two_factor_secret`, `two_factor_recovery_codes` and
-`two_factor_confirmed_at` to the `users` table. Two-factor authentication is out
-of scope, so those columns are not added. Every one of the four account tables
-would otherwise need the same three columns added and then left permanently null,
-which is schema carrying a feature that does not exist. If two-factor
-authentication is ever adopted, it is added once, to all four tables, as its own
-piece of work.
+**No two-factor columns on any account table.** Two-factor authentication is out
+of scope, so `two_factor_secret`, `two_factor_recovery_codes` and
+`two_factor_confirmed_at` are not added to any of the four tables. Each would
+otherwise sit permanently null — schema carrying a feature that does not exist. If
+two-factor authentication is ever adopted, it is added once, to all four tables,
+as its own piece of work.
 
 ### Generated client and the contract
 
@@ -620,9 +608,9 @@ must pass locally before it is pushed.
   environment; changing that is a small, separate piece of work.
 - **Email or push notifications.**
 - **Rate limiting anywhere other than the four sign-in endpoints.** Login
-  throttling is in scope, and comes from Fortify. Throttling the dashboards, the
-  password reset endpoints, or the API generally is not, and is worth doing before
-  any public exposure.
+  throttling is in scope, and is a per-account-type `RateLimiter` plus route
+  middleware. Throttling the dashboards, the password reset endpoints, or the API
+  generally is not, and is worth doing before any public exposure.
 - **File uploads, media handling, and the public storage disk.**
 - **Performance work, caching strategy, and query optimisation.** The dashboards
   have no data to be slow about yet.
@@ -664,16 +652,19 @@ which are needed for a login screen and a dashboard shell. Bearer tokens held in
 browser memory are a real security posture, mitigated by short lifetimes and
 rotation, and the cookie-based improvement depends on acquiring a domain name.
 
-**Fortify's action classes are internal, and that is a live dependency.** Using
-Fortify as a library of actions rather than as a route registrar means calling
-classes the package does not promise to keep. Three things keep that acceptable
-rather than merely noted: the dependency is confined to a single adapter, every
-one of the four sign-in paths is covered by feature tests, so a moved class fails
-loudly on the next test run rather than changing behaviour quietly; and the
-fallback is known and small — core Laravel's `RateLimiter` and `Password` broker
-provide the same two capabilities Fortify is wanted for here, in perhaps a hundred
-lines. The arrangement should be re-examined at the next Fortify major version
-rather than carried forward indefinitely on the strength of having worked once.
+**Choosing a package for the credential lifecycle went the other way than
+planned, and the reason is worth keeping.** Fortify was adopted for throttling and
+removed once implementation showed what it actually did here: its
+auto-discovered provider put session-based `/login`, `/logout` and password-reset
+routes on an API meant to have four token-based sign-in endpoints, and the
+per-guard wiring meant to make it work was in a provider that was never
+registered. The lesson generalises past this package. A package that registers
+its own routes is not inert until configured, and a service provider written but
+not added to `bootstrap/providers.php` is not dead code — it is a trap, because
+the file looks correct and registering it is the obvious next step. The two
+things that would have caught this earlier are now standing checks: a route list
+with no unexpected entries, and a test that the four sign-in routes are the only
+authentication surface.
 
 **Wayfinder is a beta dependency** and the generated client is the mechanism that
 keeps four front ends honest. If it proves unsuitable, the fallback is a
