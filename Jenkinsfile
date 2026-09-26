@@ -227,24 +227,38 @@ pipeline {
                             # Only orchestration files travel. Source and secrets stay
                             # out of the VPS: it runs the image, not a checkout.
                             #
-                            # "deploy" and not "deploy/". The trailing slash tells
-                            # rsync to copy a directory's *contents* into the
-                            # destination, so the scripts land loose at the top of
-                            # DEPLOY_DIR and --delete then removes the deploy/
-                            # directory that used to hold them. The target is left
-                            # looking fine and there is no ./deploy/deploy.sh to
-                            # run. Without the slash, deploy/ is recreated as a
-                            # directory of its own.
+                            # Assembled into a staging directory first, so rsync is
+                            # given one source rather than two, because --delete
+                            # does not mean what it looks like with several:
+                            # it applies within each source argument's own tree and
+                            # nowhere else. Given "docker-compose.prod.yml deploy"
+                            # it prunes stale files inside deploy/ and leaves
+                            # anything at the top of DEPLOY_DIR alone, so a file
+                            # dropped there by an earlier sync survives every run
+                            # from then on. One staged directory makes it a real
+                            # replacement of the whole directory.
                             #
-                            # --delete across two sources is what replaces stale
-                            # files in deploy/ instead of leaving them to
-                            # accumulate, and --exclude keeps .env out of its
-                            # reach: excluded files are not deleted unless
-                            # --delete-excluded is also given.
+                            # And "deploy", never "deploy/": the trailing slash
+                            # means "copy this directory's contents here", so the
+                            # scripts land loose at the top of DEPLOY_DIR and
+                            # --delete then removes the deploy/ directory that was
+                            # holding them - a sync that transfers every byte
+                            # without error and leaves no ./deploy/deploy.sh to run.
+                            #
+                            # --exclude is what keeps .env alive. Excluded files are
+                            # outside --delete's reach unless --delete-excluded is
+                            # also passed, so the one file on the target that
+                            # Jenkins must never touch survives the sync that
+                            # replaces everything around it.
+                            STAGE="$(mktemp -d)"
+                            trap 'rm -rf "$STAGE"' EXIT
+                            cp docker-compose.prod.yml "$STAGE/"
+                            cp -R deploy "$STAGE/"
+
                             rsync -az --delete \
                                 --exclude '.env' \
                                 -e "ssh $SSH_OPTS" \
-                                docker-compose.prod.yml deploy "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/"
+                                "$STAGE/" "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/"
 
                             echo "==> Deploying $IMAGE"
                             ssh $SSH_OPTS "$DEPLOY_USER@$DEPLOY_HOST" \
