@@ -16,6 +16,8 @@
 |
 */
 
+use App\Http\Controllers\Auth\AdminLoginController;
+use App\Http\Controllers\Auth\SuperAdminLoginController;
 use App\Http\Controllers\Auth\UserLoginController;
 use App\Http\Controllers\Auth\WorkerLoginController;
 use App\Providers\AppServiceProvider;
@@ -39,4 +41,18 @@ Route::prefix('v1/identity')
         Route::post('/workers/sign-in', WorkerLoginController::class)
             ->middleware('throttle:'.AppServiceProvider::LOGIN_LIMITERS['workers'])
             ->name('workers.signin');
+
+        // Administrator sign-in (admins guard) - the administrator application
+        // calls this, and it resolves credentials against the admins table only.
+        Route::post('/admins/sign-in', AdminLoginController::class)
+            ->middleware('throttle:'.AppServiceProvider::LOGIN_LIMITERS['admins'])
+            ->name('admins.signin');
+
+        // Super administrator sign-in (super_admins guard) - a separate door, not
+        // the administrator door with a wider key. It resolves credentials
+        // against the super_admins table only, and it is the only path in the
+        // platform that issues the wildcard ability.
+        Route::post('/super-admins/sign-in', SuperAdminLoginController::class)
+            ->middleware('throttle:'.AppServiceProvider::LOGIN_LIMITERS['super_admins'])
+            ->name('super-admins.signin');
     });

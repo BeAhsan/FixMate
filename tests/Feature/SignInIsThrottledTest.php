@@ -230,11 +230,11 @@ class SignInIsThrottledTest extends TestCase
         $routes = collect(app('router')->getRoutes()->getRoutes())
             ->filter(fn ($route) => str_ends_with($route->uri(), 'sign-in'));
 
-        $this->assertCount(2, $routes, 'expected the two sign-in routes built so far');
+        $this->assertCount(4, $routes, 'expected all four sign-in routes');
 
         $middlewares = $routes->map(fn ($route) => collect($route->gatherMiddleware())
             ->first(fn ($m) => str_starts_with($m, 'throttle:')));
 
-        $this->assertCount(2, $middlewares->filter()->unique(), 'each sign-in route must name a different limiter');
+        $this->assertCount(4, $middlewares->filter()->unique(), 'each sign-in route must name a different limiter');
     }
 }
