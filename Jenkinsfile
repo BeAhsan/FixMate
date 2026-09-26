@@ -61,17 +61,27 @@ pipeline {
         )
     }
 
+    // Literals only. A Declarative environment block cannot reference variables
+    // set alongside it - the whole block is validated as a unit before any of it
+    // takes effect - so deriving IMAGE here fails the build at validation with
+    // "One or more variables have some issues with their values: IMAGE", which
+    // is a long way from the line that causes it. IMAGE and GIT_SHA are derived
+    // in the Checkout stage instead, once GIT_COMMIT exists.
     environment {
         REGISTRY   = 'ghcr.io'
         IMAGE_NAME = 'ghcr.io/beahsan/fixmate/app'
-        GIT_SHA    = "${env.GIT_COMMIT?.take(12) ?: 'local'}"
-        IMAGE      = "${env.IMAGE_NAME}:${env.GIT_SHA}"
     }
 
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
+                script {
+                    // GIT_COMMIT only exists after the checkout above, which is
+                    // why this cannot be an environment entry.
+                    env.GIT_SHA = env.GIT_COMMIT ? env.GIT_COMMIT.take(12) : 'local'
+                    env.IMAGE = "${env.IMAGE_NAME}:${env.GIT_SHA}"
+                }
                 sh 'git log -1 --pretty="%h %an %s"'
             }
         }
@@ -228,7 +238,16 @@ pipeline {
             echo "Build failed. If the deploy stage ran, check the rollback status on ${params.DEPLOY_HOST}."
         }
         always {
-            sh 'docker image prune -f --filter "dangling=true" || true'
+            // Wrapped in node deliberately. A top-level post block runs outside
+            // the agent that `agent any` allocated, and sh needs a workspace, so
+            // unwrapped this fails with "Required context class hudson.FilePath
+            // is missing" - on every build, successful ones included, as an
+            // "Error when executing always post condition" after the result is
+            // already decided. It looks like a flaky post-build failure rather
+            // than a missing node.
+            node {
+                sh 'docker image prune -f --filter "dangling=true" || true'
+            }
         }
     }
 }
