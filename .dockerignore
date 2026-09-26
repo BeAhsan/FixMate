@@ -42,7 +42,10 @@ deploy/
 README.md
 AGENTS.md
 CLAUDE.md
+# `*.md` only matches at the root, so nested docs need this or they ship in the
+# image via `COPY . .` in the vendor stage.
 *.md
+/docs
 /.opencode
 /.claude
 

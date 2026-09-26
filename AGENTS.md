@@ -198,12 +198,35 @@ never enter an image layer.
 
 ## Agent skills
 
-Project skills live in `.opencode/skills/<name>/SKILL.md` and are committed. Two
-of them are prefixed `fixmate-` (`fixmate-laravel-best-practices`,
+Project skills live in `.opencode/commands/<name>/SKILL.md` and are committed.
+Two of them are prefixed `fixmate-` (`fixmate-laravel-best-practices`,
 `fixmate-tailwindcss-development`) because an unprefixed name already exists in
 `~/.config/opencode/skills/`; OpenCode resolves skills by name, so a duplicate
 silently shadows one of them. Keep names unique across project and global scope,
 and keep the frontmatter `name:` equal to its directory name.
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues on `BeAhsan/FixMate`, operated through the
+`gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage labels, used under their default names. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. Neither exists
+yet — both are created lazily by `/domain-modeling`, so their absence is not a
+problem to go and fix. See `docs/agents/domain.md`.
+
+### Specs
+
+Design documents live in `docs/specs/`, one numbered file each, indexed in
+`docs/specs/README.md`. A spec file is the source of truth and is versioned with
+the code; the GitHub issue is the work queue and links to the file rather than
+duplicating it. See `docs/specs/README.md`.
 
 <laravel-boost-guidelines>
 === foundation rules ===
