@@ -315,6 +315,38 @@ fi
 chmod 600 "$ENV_FILE"
 
 # ---------------------------------------------------------------------------
+# 5b. The deploy user
+# ---------------------------------------------------------------------------
+# Everything above runs as root, because installing Docker and pulling an image
+# needs it. The deploy path does not: Jenkins SSHes in as a normal user, rsyncs
+# the orchestration files into APP_DIR, and runs deploy.sh there. So the user who
+# invoked this script is given the two things that path needs.
+#
+# Without the group, deploy.sh dies on "permission denied while trying to connect
+# to the Docker daemon socket". Without the ownership, rsync dies with
+# "Permission denied (13)" on the first file it writes. Both read like pipeline
+# faults, and neither is, so they are fixed here where the cause is visible.
+#
+# Membership takes effect at the next login. An SSH session is a new login, so
+# the next deploy gets it without anyone having to sign out of anything.
+DEPLOY_USER="${SUDO_USER:-}"
+if [ -n "$DEPLOY_USER" ] && [ "$DEPLOY_USER" != "root" ] && id "$DEPLOY_USER" >/dev/null 2>&1; then
+    if id -nG "$DEPLOY_USER" | tr ' ' '\n' | grep -qx docker; then
+        log "${DEPLOY_USER} is already in the docker group"
+    else
+        log "Adding ${DEPLOY_USER} to the docker group"
+        usermod -aG docker "$DEPLOY_USER"
+    fi
+    log "Handing ${APP_DIR} to ${DEPLOY_USER}"
+    chown -R "$DEPLOY_USER":"$(id -gn "$DEPLOY_USER")" "$APP_DIR"
+else
+    warn "SUDO_USER is unset or root, so the deploy user was not set up."
+    warn "A Jenkins deploy needs both of these on the target:"
+    warn "    usermod -aG docker <deploy-user>"
+    warn "    chown -R <deploy-user> ${APP_DIR}"
+fi
+
+# ---------------------------------------------------------------------------
 # 6. Verify
 # ---------------------------------------------------------------------------
 # A missing APP_KEY means Laravel throws on every request. It is the one failure
