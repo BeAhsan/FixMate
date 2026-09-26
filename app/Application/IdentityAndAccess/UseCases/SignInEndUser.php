@@ -32,14 +32,14 @@ class SignInEndUser
         $user = $this->userRepository->findByEmail($request->email);
 
         // Verify credentials using domain service
-        if (! $this->authService->verifyCredentials($user, $request->password)) {
+        if (! $this->authService->verifyCredentials($user?->passwordHash, $request->password)) {
             // Use same exception for all failure cases to prevent user enumeration
             throw new \InvalidArgumentException('The provided credentials are incorrect.');
         }
 
         // At this point, user is not null and credentials are valid
         // Check if account is suspended
-        if ($this->authService->isAccountSuspended($user)) {
+        if ($this->authService->isAccountSuspended($user?->status)) {
             throw new \DomainException('Your account has been suspended. Please contact support.');
         }
 
