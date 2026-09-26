@@ -75,12 +75,23 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                // The return value, not env.GIT_COMMIT. The git plugin publishes
+                // GIT_COMMIT to the build environment from the BuildData that
+                // checkout attaches, and that does not reach env within the same
+                // stage that created it. Reading env.GIT_COMMIT here yields null,
+                // the 'local' fallback catches it, and the build carries on
+                // tagging images 'local' - which is the kind of thing that only
+                // becomes visible when two images with the same tag meet.
+                def scmVars = checkout scm
                 script {
-                    // GIT_COMMIT only exists after the checkout above, which is
-                    // why this cannot be an environment entry.
-                    env.GIT_SHA = env.GIT_COMMIT ? env.GIT_COMMIT.take(12) : 'local'
+                    env.GIT_SHA = scmVars.GIT_COMMIT ? scmVars.GIT_COMMIT.take(12) : 'local'
                     env.IMAGE = "${env.IMAGE_NAME}:${env.GIT_SHA}"
+                    // Local-only, never pushed. The tag uses a dash, not a second
+                    // colon: "fixmate/app:test:$SHA" has two colons and is not a
+                    // valid image reference, so docker rejects it before the build
+                    // starts. That is wrong for every SHA, not just the fallback -
+                    // it fails identically with a real commit hash in it.
+                    env.CI_TEST_IMAGE = "fixmate/app:ci-${env.GIT_SHA}"
                 }
                 sh 'git log -1 --pretty="%h %an %s"'
             }
@@ -91,9 +102,8 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    docker build --target test -t "fixmate/app:test:${GIT_SHA}" .
-                    docker run --rm "fixmate/app:test:${GIT_SHA}" \
-                        vendor/bin/pint --test
+                    docker build --target test -t "${CI_TEST_IMAGE}" .
+                    docker run --rm "${CI_TEST_IMAGE}" vendor/bin/pint --test
                 '''
             }
         }
@@ -103,7 +113,7 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    docker run --rm "fixmate/app:test:${GIT_SHA}"
+                    docker run --rm "${CI_TEST_IMAGE}"
                 '''
             }
         }
