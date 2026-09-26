@@ -2,6 +2,16 @@ import { signin as signinUser } from './generated/routes/users'
 import { signin as signinWorker } from './generated/routes/workers'
 import { signin as signinAdmin } from './generated/routes/admins'
 import { signin as signinSuperAdmin } from './generated/routes/super-admins'
+import { forgotPassword as forgotPasswordUser, resetPassword as resetPasswordUser } from './generated/routes/users'
+import { forgotPassword as forgotPasswordWorker, resetPassword as resetPasswordWorker } from './generated/routes/workers'
+import {
+    forgotPassword as forgotPasswordAdmin,
+    resetPassword as resetPasswordAdmin,
+} from './generated/routes/admins'
+import {
+    forgotPassword as forgotPasswordSuperAdmin,
+    resetPassword as resetPasswordSuperAdmin,
+} from './generated/routes/super-admins'
 import { array, number, object, string, type Schema } from './schema'
 import type { ApiClient, Route } from './http'
 
@@ -53,6 +63,23 @@ export interface SuperAdminSignInResult {
     token: string
     super_admin: SignInAccount
     abilities: string[]
+}
+
+/** Ask for a password reset link to be sent to an address. */
+export interface ForgotPasswordInput {
+    email: string
+}
+
+/** Redeem a reset link with a new password. */
+export interface ResetPasswordInput {
+    email: string
+    token: string
+    password: string
+}
+
+/** What either half of a reset answers with. */
+export interface AcknowledgementResult {
+    message: string
 }
 
 const signInRequest: Schema<SignInInput> = object({
@@ -127,6 +154,46 @@ const superAdminSignInResponse: Schema<{ data: SuperAdminSignInResult }> = objec
     }),
 })
 
+/**
+ * Asking for a reset link takes an address and nothing else.
+ *
+ * Which store the address is looked for in is not a field, and must never become
+ * one: the back end decides it from the endpoint the front end called, so a
+ * client cannot ask for a link against a store that is not its own.
+ */
+const forgotPasswordRequest: Schema<ForgotPasswordInput> = object({
+    email: string(),
+})
+
+/**
+ * Redeeming a link takes the address, the token from the link, and the new
+ * password. The back end refuses a password that does not meet its policy under
+ * `errors.password`, and refuses a link that is spent or expired under the
+ * neutral `errors.password_reset` — the two are different failures with
+ * different fixes, so they are told apart here even though neither tells a
+ * caller whether an account exists.
+ */
+const resetPasswordRequest: Schema<ResetPasswordInput> = object({
+    email: string(),
+    token: string(),
+    password: string(),
+})
+
+/**
+ * Both halves of a reset answer with one message and nothing else.
+ *
+ * One shape for the acknowledgement and one for the confirmation, because a
+ * front end shows either as a sentence. The acknowledgement is deliberately
+ * conditional in wording: the back end sends it whether or not the address holds
+ * an account, so a screen that renders it must not imply that a link is on its
+ * way.
+ */
+const acknowledgementResponse: Schema<{ data: AcknowledgementResult }> = object({
+    data: object({
+        message: string(),
+    }),
+})
+
 const definitions = {
     signInUser: {
         // Calling the generated function yields its URL and verb. The URL is
@@ -149,6 +216,46 @@ const definitions = {
         route: signinSuperAdmin() satisfies Route,
         request: signInRequest,
         response: superAdminSignInResponse,
+    },
+    forgotPasswordUser: {
+        route: forgotPasswordUser() satisfies Route,
+        request: forgotPasswordRequest,
+        response: acknowledgementResponse,
+    },
+    resetPasswordUser: {
+        route: resetPasswordUser() satisfies Route,
+        request: resetPasswordRequest,
+        response: acknowledgementResponse,
+    },
+    forgotPasswordWorker: {
+        route: forgotPasswordWorker() satisfies Route,
+        request: forgotPasswordRequest,
+        response: acknowledgementResponse,
+    },
+    resetPasswordWorker: {
+        route: resetPasswordWorker() satisfies Route,
+        request: resetPasswordRequest,
+        response: acknowledgementResponse,
+    },
+    forgotPasswordAdmin: {
+        route: forgotPasswordAdmin() satisfies Route,
+        request: forgotPasswordRequest,
+        response: acknowledgementResponse,
+    },
+    resetPasswordAdmin: {
+        route: resetPasswordAdmin() satisfies Route,
+        request: resetPasswordRequest,
+        response: acknowledgementResponse,
+    },
+    forgotPasswordSuperAdmin: {
+        route: forgotPasswordSuperAdmin() satisfies Route,
+        request: forgotPasswordRequest,
+        response: acknowledgementResponse,
+    },
+    resetPasswordSuperAdmin: {
+        route: resetPasswordSuperAdmin() satisfies Route,
+        request: resetPasswordRequest,
+        response: acknowledgementResponse,
     },
 } as const
 
@@ -188,6 +295,52 @@ export interface Operations {
      * an account in the super admins table.
      */
     signInSuperAdmin(input: SignInInput): Promise<SuperAdminSignInResult>
+
+    /**
+     * Ask for a password reset link for the customer application.
+     *
+     * Resolves with the same acknowledgement whatever the back end makes of the
+     * address, so a screen that renders it is showing a conditional statement
+     * and must not present it as "we have emailed you". It is the only thing the
+     * caller learns, and that is the point: a reset endpoint that reported an
+     * unknown address would be a way of asking which addresses hold accounts.
+     */
+    forgotPasswordUser(input: ForgotPasswordInput): Promise<AcknowledgementResult>
+
+    /**
+     * Redeem a customer reset link.
+     *
+     * Rejects with a `validation` ApiError whose `fields` hold `password` when
+     * the new password does not meet the back end's policy, or `password_reset`
+     * when the link has been spent or has expired. The link is single use and it
+     * is checked before the password is, so a refused password leaves it usable.
+     */
+    resetPasswordUser(input: ResetPasswordInput): Promise<AcknowledgementResult>
+
+    /** Ask for a password reset link for the worker application. */
+    forgotPasswordWorker(input: ForgotPasswordInput): Promise<AcknowledgementResult>
+
+    /**
+     * Redeem a worker reset link.
+     *
+     * A separate operation from the customer one rather than a shared one with a
+     * parameter: the store a reset changes is decided by the endpoint, and a
+     * front end that could name the store would be able to ask for a link
+     * against an account that is not its own.
+     */
+    resetPasswordWorker(input: ResetPasswordInput): Promise<AcknowledgementResult>
+
+    /** Ask for a password reset link for the administrator application. */
+    forgotPasswordAdmin(input: ForgotPasswordInput): Promise<AcknowledgementResult>
+
+    /** Redeem an administrator reset link. */
+    resetPasswordAdmin(input: ResetPasswordInput): Promise<AcknowledgementResult>
+
+    /** Ask for a password reset link for the super administrator application. */
+    forgotPasswordSuperAdmin(input: ForgotPasswordInput): Promise<AcknowledgementResult>
+
+    /** Redeem a super administrator reset link. */
+    resetPasswordSuperAdmin(input: ResetPasswordInput): Promise<AcknowledgementResult>
 }
 
 /**
@@ -227,7 +380,71 @@ export function createOperations(client: ApiClient): Operations {
 
             return data
         },
+        async forgotPasswordUser(input) {
+            const { data } = await client.request(definitions.forgotPasswordUser.route, {
+                body: input,
+                response: definitions.forgotPasswordUser.response,
+            })
+
+            return data
+        },
+        async resetPasswordUser(input) {
+            const { data } = await client.request(definitions.resetPasswordUser.route, {
+                body: input,
+                response: definitions.resetPasswordUser.response,
+            })
+
+            return data
+        },
+        async forgotPasswordWorker(input) {
+            const { data } = await client.request(definitions.forgotPasswordWorker.route, {
+                body: input,
+                response: definitions.forgotPasswordWorker.response,
+            })
+
+            return data
+        },
+        async resetPasswordWorker(input) {
+            const { data } = await client.request(definitions.resetPasswordWorker.route, {
+                body: input,
+                response: definitions.resetPasswordWorker.response,
+            })
+
+            return data
+        },
+        async forgotPasswordAdmin(input) {
+            const { data } = await client.request(definitions.forgotPasswordAdmin.route, {
+                body: input,
+                response: definitions.forgotPasswordAdmin.response,
+            })
+
+            return data
+        },
+        async resetPasswordAdmin(input) {
+            const { data } = await client.request(definitions.resetPasswordAdmin.route, {
+                body: input,
+                response: definitions.resetPasswordAdmin.response,
+            })
+
+            return data
+        },
+        async forgotPasswordSuperAdmin(input) {
+            const { data } = await client.request(definitions.forgotPasswordSuperAdmin.route, {
+                body: input,
+                response: definitions.forgotPasswordSuperAdmin.response,
+            })
+
+            return data
+        },
+        async resetPasswordSuperAdmin(input) {
+            const { data } = await client.request(definitions.resetPasswordSuperAdmin.route, {
+                body: input,
+                response: definitions.resetPasswordSuperAdmin.response,
+            })
+
+            return data
+        },
     }
 }
 
-export { signInRequest, signInResponse, workerSignInResponse }
+export { signInRequest, signInResponse, workerSignInResponse, forgotPasswordRequest, resetPasswordRequest }

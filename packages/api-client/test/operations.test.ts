@@ -92,3 +92,69 @@ describe('signing in as an end user', () => {
         expect(error.retryable).toBe(true)
     })
 })
+
+describe('recovering an account by resetting its password', () => {
+    const acknowledgement = { data: { message: 'If that address belongs to an account, a password reset link is on its way.' } }
+
+    it('posts to the generated URL for the account type and unwraps the message', async () => {
+        const { fetch, calls } = recordingFetch(acknowledgement, 202)
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.forgotPasswordWorker({ email: 'ahsan@example.test' })
+
+        expect(calls).toEqual(['https://api.fixmate.test/api/v1/identity/workers/forgot-password'])
+        expect(result).toEqual({ message: acknowledgement.data.message })
+    })
+
+    it('redeems a link at the same account type it was requested from', async () => {
+        // The two halves are separate operations rather than one with a store
+        // parameter, so a front end physically cannot ask for a link against a
+        // store that is not its own. Redeeming at the wrong one is the back end's
+        // refusal, and the message it gives is the same one a spent link gets.
+        const { fetch, calls } = recordingFetch({ data: { message: 'Your password has been changed.' } })
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.resetPasswordWorker({
+            email: 'ahsan@example.test',
+            token: 'a-token-from-the-link',
+            password: 'a-freshly-chosen-Password1!',
+        })
+
+        expect(calls).toEqual(['https://api.fixmate.test/api/v1/identity/workers/reset-password'])
+        expect(result).toEqual({ message: 'Your password has been changed.' })
+    })
+
+    it('rejects a password the back end will not accept, filed against the password', async () => {
+        const { fetch } = recordingFetch(
+            { message: 'The password field must be at least 12 characters.', errors: { password: ['The password field must be at least 12 characters.'] } },
+            422,
+        )
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations
+            .resetPasswordUser({ email: 'ahsan@example.test', token: 'a-token', password: 'short' })
+            .catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('validation')
+        expect(error.fields['password']).toEqual(['The password field must be at least 12 characters.'])
+    })
+
+    it('rejects a spent or expired link under the neutral key, with no account details', async () => {
+        const { fetch } = recordingFetch(
+            {
+                message: 'This password reset link is no longer valid. Request a new one.',
+                errors: { password_reset: ['This password reset link is no longer valid. Request a new one.'] },
+            },
+            422,
+        )
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations
+            .resetPasswordAdmin({ email: 'ahsan@example.test', token: 'spent', password: 'a-freshly-chosen-Password1!' })
+            .catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('validation')
+        expect(error.fields['password_reset']).toEqual(['This password reset link is no longer valid. Request a new one.'])
+        expect(error.fields['email']).toBeUndefined()
+    })
+})

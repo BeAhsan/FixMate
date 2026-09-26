@@ -28,4 +28,12 @@ export { SchemaError } from './schema'
 export type { Schema } from './schema'
 
 export { createOperations } from './operations'
-export type { Operations, OperationName, SignInInput, SignInResult } from './operations'
+export type {
+    AcknowledgementResult,
+    ForgotPasswordInput,
+    OperationName,
+    Operations,
+    ResetPasswordInput,
+    SignInInput,
+    SignInResult,
+} from './operations'
