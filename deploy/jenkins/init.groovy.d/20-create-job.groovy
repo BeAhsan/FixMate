@@ -60,15 +60,30 @@ configFile.eachLine { line ->
 def store = SystemCredentialsProvider.getInstance().getStore()
 def domain = Domain.global()
 
-/** Replaces a credential with the same ID, or adds it if absent. */
+/**
+ * Replaces a credential with the same ID, or adds it if absent.
+ *
+ * updateCredentials will not change a credential's class, and it does not say
+ * so: it returns success, and the old type is still on disk afterwards. An
+ * install that is changing a credential's type therefore logs "updated", looks
+ * correct, and still fails later at pipeline time with a type error that reads
+ * as though nothing had ever been configured. So the type is checked here, and
+ * a mismatched credential is removed and re-added rather than updated.
+ */
 def upsert = { String id, Object credential ->
     def existing = store.getCredentials(domain).find { it.id == id }
-    if (existing) {
-        store.updateCredentials(domain, existing, credential)
-    } else {
+    if (!existing) {
         store.addCredentials(domain, credential)
+        info "credential '${id}' created"
+    } else if (existing.getClass() != credential.getClass()) {
+        store.removeCredentials(domain, existing)
+        store.addCredentials(domain, credential)
+        info "credential '${id}' replaced: ${existing.getClass().simpleName} -> " +
+             "${credential.getClass().simpleName}"
+    } else {
+        store.updateCredentials(domain, existing, credential)
+        info "credential '${id}' updated"
     }
-    info "credential '${id}' ${existing ? 'updated' : 'created'}"
 }
 
 def registryUser  = read('registry-user')
