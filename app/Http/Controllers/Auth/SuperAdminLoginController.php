@@ -64,8 +64,24 @@ class SuperAdminLoginController extends Controller
             ])->status(422);
         }
 
-        // Find the Eloquent super admin using the repository (case-insensitive)
-        $superAdmin = SuperAdmin::whereRaw('LOWER(email) = ?', [strtolower($dto->email->value)])->firstOrFail();
+        // Find the Eloquent super administrator to mint the token against
+        // (case-insensitive).
+        //
+        // The use case has already resolved and verified this account, so in
+        // every intended path this lookup finds it. It is a second place where
+        // the store a request is checked against is decided, and a miss here is
+        // therefore a store mix-up rather than a fact about the caller. It used
+        // to be firstOrFail(), which turned that mix-up into a 404 - a
+        // distinguishable status on a route whose only honest refusals are 422
+        // and 403, and so a way to probe which addresses exist in which store.
+        // The neutral refusal is the correct answer: fail closed, say nothing.
+        $superAdmin = SuperAdmin::whereRaw('LOWER(email) = ?', [strtolower($dto->email->value)])->first();
+
+        if (! $superAdmin) {
+            throw ValidationException::withMessages([
+                self::REFUSAL_KEY => [InvalidCredentials::MESSAGE],
+            ])->status(422);
+        }
 
         $token = $superAdmin->createToken('api', $response->abilities)->plainTextToken;
 
