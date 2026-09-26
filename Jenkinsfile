@@ -238,14 +238,23 @@ pipeline {
             echo "Build failed. If the deploy stage ran, check the rollback status on ${params.DEPLOY_HOST}."
         }
         always {
-            // Wrapped in node deliberately. A top-level post block runs outside
-            // the agent that `agent any` allocated, and sh needs a workspace, so
-            // unwrapped this fails with "Required context class hudson.FilePath
-            // is missing" - on every build, successful ones included, as an
-            // "Error when executing always post condition" after the result is
-            // already decided. It looks like a flaky post-build failure rather
-            // than a missing node.
-            node {
+            // Three things are wrong with the obvious `sh` here, all of them
+            // silent until a build runs:
+            //
+            //   1. A top-level post block runs outside the agent that
+            //      `agent any` allocated, and sh needs a workspace, so unwrapped
+            //      it fails with "Required context class hudson.FilePath is
+            //      missing" - on successful builds too, as an "Error when
+            //      executing always post condition" after the result is already
+            //      decided.
+            //   2. node is not zero-argument. ExecutorStep has exactly one
+            //      constructor and it takes the label, so node { } fails to
+            //      compile with 'Missing required parameter: "label"'.
+            //   3. 'built-in' is the controller's own node label, which is what
+            //      `agent any` resolves to on a controller with no agents
+            //      configured. If this controller ever gets real agents and the
+            //      built-in node is removed, this label is the thing to change.
+            node('built-in') {
                 sh 'docker image prune -f --filter "dangling=true" || true'
             }
         }
