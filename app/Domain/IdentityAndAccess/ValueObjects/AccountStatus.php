@@ -28,12 +28,17 @@ enum AccountStatus: string
     }
 
     /**
-     * Create from string, defaulting to Active for unknown values.
+     * Create from a stored value, defaulting to Suspended for anything unknown.
+     *
+     * This fails closed deliberately. A status this code does not recognise —
+     * because the row was corrupted, or because a value was added to the column
+     * that this code has not been taught about — must not be treated as Active.
+     * An unrecognised status denies access; it never grants it.
      */
     public static function fromString(string $value): self
     {
-        $normalized = strtolower($value);
+        $normalized = strtolower(trim($value));
 
-        return self::tryFrom($normalized) ?? self::Active;
+        return self::tryFrom($normalized) ?? self::Suspended;
     }
 }
