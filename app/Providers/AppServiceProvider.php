@@ -3,7 +3,9 @@
 namespace App\Providers;
 
 use App\Domain\IdentityAndAccess\Repositories\EndUserRepository;
+use App\Domain\IdentityAndAccess\Repositories\WorkerRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentEndUserRepository;
+use App\Infrastructure\IdentityAndAccess\Repositories\EloquentWorkerRepository;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -13,8 +15,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Bind domain repository interface to Eloquent implementation
+        // Bind domain repository interfaces to Eloquent implementations
         $this->app->bind(EndUserRepository::class, EloquentEndUserRepository::class);
+        $this->app->bind(WorkerRepository::class, EloquentWorkerRepository::class);
     }
 
     /**

@@ -11,12 +11,13 @@
 | JSON for every request, so a route added here cannot accidentally return an
 | HTML page.
 |
-| No routes are declared yet. Each bounded context brings its own route group,
-| middleware and throttle; the Identity and Access context is the first.
+| Each bounded context brings its own route group, middleware and throttle;
+| the Identity and Access context is the first.
 |
 */
 
 use App\Http\Controllers\Auth\UserLoginController;
+use App\Http\Controllers\Auth\WorkerLoginController;
 
 // Identity and Access context routes
 Route::prefix('v1/identity')
@@ -25,4 +26,9 @@ Route::prefix('v1/identity')
         // End user sign-in (users guard)
         Route::post('/users/sign-in', UserLoginController::class)
             ->name('users.signin');
+
+        // Worker sign-in (workers guard) - the worker application calls this,
+        // and it resolves credentials against the workers table only.
+        Route::post('/workers/sign-in', WorkerLoginController::class)
+            ->name('workers.signin');
     });
