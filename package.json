@@ -1,0 +1,19 @@
+{
+    "name": "fixmate",
+    "version": "0.0.0",
+    "private": true,
+    "description": "FixMate monorepo: the Laravel back end and the four front-end applications that call it.",
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
+    "scripts": {
+        "api-client:generate": "php artisan api-client:generate",
+        "api-client:check": "php artisan api-client:check",
+        "typecheck": "npm run typecheck --workspaces --if-present",
+        "test": "npm run test --workspaces --if-present"
+    },
+    "engines": {
+        "node": ">=22.0.0"
+    }
+}

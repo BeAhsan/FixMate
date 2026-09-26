@@ -1,8 +1,11 @@
 # FixMate
 
 A Laravel 13 JSON API on PHP 8.4, packaged as a single Docker image and
-deployed to a VPS by a Jenkins pipeline. There is no front end in this
-repository: it serves JSON, plus the health endpoint the deploy script polls.
+deployed to a VPS by a Jenkins pipeline. The back end serves JSON, plus the
+health endpoint the deploy script polls; the four front-end applications that
+will consume it are not in this repository yet. The one piece of front-end code
+that is here is `packages/api-client`, the typed client generated from these
+routes.
 
 ```
   git push
@@ -69,6 +72,22 @@ Notes:
   `npm run build` step.
 - Config is not cached in development, so `.env` and `config/` changes apply on
   the next request.
+
+## The typed API client
+
+`packages/api-client` is the single place that knows how to talk to this back
+end. Its route functions are generated from the routes declared here, so a
+renamed route cannot reach a browser as a 404.
+
+```sh
+php artisan api-client:generate   # write packages/api-client/src/generated
+php artisan api-client:check      # fail if it no longer matches the front ends
+npm install && npm run typecheck && npm test
+```
+
+The generated directory is not committed; `api-client:check` regenerates it into
+a temporary directory and compares that against `packages/api-client/contract.json`.
+Both run in CI, ahead of the test suite. See `packages/api-client/README.md`.
 
 ## One-time VPS setup
 
