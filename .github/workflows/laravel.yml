@@ -42,5 +42,10 @@ jobs:
       # Before the tests, and the same gate the Jenkins Verify stage applies.
       # Run this locally too, or CI is the first place it is found.
       run: vendor/bin/pint --test
+    - name: Check the generated client still matches the front ends
+      # The drift check, run as its own step so a renamed route says so rather
+      # than surfacing as a failing test three files away. The same command is
+      # in the Jenkins Test stage, and the suite asserts it too.
+      run: php artisan api-client:check
     - name: Execute tests (Unit and Feature tests) via PHPUnit/Pest
       run: php artisan test

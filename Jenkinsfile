@@ -126,6 +126,15 @@ pipeline {
             steps {
                 sh '''
                     set -eu
+
+                    # The drift check, before the suite: regenerate the typed
+                    # client from this commit's routes and fail if it no longer
+                    # matches what the four front ends expect. The suite asserts
+                    # the same thing, but running it on its own means a renamed
+                    # route is reported as a renamed route. Mirrored by the
+                    # api-client:check step in .github/workflows/laravel.yml.
+                    docker run --rm "${CI_TEST_IMAGE}" php artisan api-client:check
+
                     docker run --rm "${CI_TEST_IMAGE}"
                 '''
             }

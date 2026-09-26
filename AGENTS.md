@@ -6,10 +6,11 @@ the code, the code wins and the README is named as the stale one.
 ## What this repo is
 
 - A Laravel 13 app (`laravel/framework` 13.33) that is a **JSON API and nothing
-  else**. There is no Blade, no Vite, no npm, and no route that renders a page:
-  `routes/api.php` is the only route file, `resources/` does not exist, and
-  there is no domain logic yet — do not assume a feature area, model or
-  endpoint exists.
+  else**. There is no Blade, no Vite, and no route that renders a page:
+  `routes/api.php` is the only route file and `resources/` does not exist. npm
+  exists (a workspaces root, one shared package) but there is no front-end
+  *application* in this repository yet — do not assume a feature area, model or
+  endpoint exists beyond the one end-user sign-in route.
 - **The actual work in this repo is infrastructure.** Dockerfile, `docker/`,
   `docker-compose*.yml`, `Jenkinsfile` and `deploy/` are the substance; the app
   is the payload. Read those before forming an opinion about the project.
@@ -38,6 +39,13 @@ show `--exclude '.env'` is what saves the VPS copy).
   changes nothing that runs.
 - They are absent from `.dockerignore`, so they do travel in the build context and
   into the image. Harmless, but expect to see them there.
+- **`out/` will collide with Next.js's static export, and the fixture wins.** The
+  frontend-foundation notes assume `output: 'export'` writes to `out/`; it does,
+  but *per application* — `apps/user/out`, not the repository root. The root
+  `out/` is this fixture, and it stays. Do not add an `out` entry to
+  `.gitignore`: that would silently untrack the fixture. If a build ever needs
+  the root directory, rename the fixture in its own commit rather than deleting
+  it, and update this section.
 
 ### `/up` is the last HTML response, and it does not come from this app's code
 
@@ -107,6 +115,28 @@ vendor/bin/pint --test                   # what CI actually runs
 php artisan test --compact               # whole suite
 php artisan test --filter=methodName     # one test
 ```
+
+The generated-client drift check is its own command, and it runs in CI ahead of
+the suite (Jenkins `Test` stage and `.github/workflows/laravel.yml`):
+
+```sh
+php artisan api-client:generate          # write packages/api-client/src/generated
+php artisan api-client:check             # regenerate into a temp dir, compare to contract.json
+```
+
+`api-client:check` is the check that catches a renamed route. Changing a route
+means changing `routes/api.php`, `packages/api-client/contract.json` and
+`packages/api-client/src/operations.ts` together, or the check fails. The
+TypeScript side:
+
+```sh
+npm install                             # once, from the root
+npm run typecheck
+npm test
+```
+
+Both need `php artisan api-client:generate` to have run first, because
+`src/generated/` is not committed and the TypeScript imports it.
 
 CI runs `pint --test`, so an unformatted file is caught by CI rather than by you.
 
@@ -212,10 +242,17 @@ never enter an image layer.
   with the `api` middleware group under Laravel's default `api` prefix — still
   not versioned. The spec wants a versioned prefix, but that decision belongs
   to whichever ticket adds the first real route group, not to this one.
-- **There is no front end in this repository.** No `package.json`, no npm
-  lockfile, no `resources/`, no `public/build`, no Vite. The four applications
-  in the spec arrive in a later ticket and are the only thing that brings npm
-  back. Do not add a build step to the image.
+- **There are no front-end *applications* in this repository yet.** There is now
+  a root `package.json` (npm workspaces: `apps/*`, `packages/*`) and one shared
+  package, `packages/api-client`. The four Next.js applications arrive later and
+  populate `apps/`. Still no `resources/`, no `public/build`, no Vite — and
+  **still do not add a front-end build step to the image**, which builds one
+  image that serves three roles from the same workspace.
+- **`src/generated/` under a package is never committed.** It is produced by
+  `php artisan api-client:generate` (gitignored, and `.dockerignore`d so a host
+  copy cannot leak in). Anything hand-written must live outside
+  `src/generated/`, because Wayfinder prunes every file it did not write from
+  the directories it owns.
 - **`config/view.php` and `storage/framework/views` are kept on purpose.** The
   framework's `ViewServiceProvider` is in the default provider list and its
   `view.finder` takes `array $paths`, so deleting the config turns a harmless

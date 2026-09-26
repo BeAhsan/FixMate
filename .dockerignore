@@ -45,3 +45,11 @@ CLAUDE.md
 
 .DS_Store
 Thumbs.db
+
+# npm workspaces. node_modules is huge and reinstalled by the front-end images;
+# the generated typed client is produced fresh by `php artisan
+# api-client:generate` in the container, so copying a host copy in would defeat
+# the point. packages/api-client/contract.json and src/ DO ship: the drift check
+# reads them out of this image.
+node_modules
+packages/*/src/generated
