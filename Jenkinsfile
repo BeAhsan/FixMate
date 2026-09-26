@@ -226,10 +226,25 @@ pipeline {
 
                             # Only orchestration files travel. Source and secrets stay
                             # out of the VPS: it runs the image, not a checkout.
+                            #
+                            # "deploy" and not "deploy/". The trailing slash tells
+                            # rsync to copy a directory's *contents* into the
+                            # destination, so the scripts land loose at the top of
+                            # DEPLOY_DIR and --delete then removes the deploy/
+                            # directory that used to hold them. The target is left
+                            # looking fine and there is no ./deploy/deploy.sh to
+                            # run. Without the slash, deploy/ is recreated as a
+                            # directory of its own.
+                            #
+                            # --delete across two sources is what replaces stale
+                            # files in deploy/ instead of leaving them to
+                            # accumulate, and --exclude keeps .env out of its
+                            # reach: excluded files are not deleted unless
+                            # --delete-excluded is also given.
                             rsync -az --delete \
                                 --exclude '.env' \
                                 -e "ssh $SSH_OPTS" \
-                                docker-compose.prod.yml deploy/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/"
+                                docker-compose.prod.yml deploy "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIR/"
 
                             echo "==> Deploying $IMAGE"
                             ssh $SSH_OPTS "$DEPLOY_USER@$DEPLOY_HOST" \
