@@ -13,7 +13,7 @@
 // Required Jenkins credentials:
 //   fixmate-registry       Username with password  (registry user + token)
 //   fixmate-ssh-key        SSH private key         (read/write on the VPS)
-//   fixmate-known-hosts    Secret text            (output of ssh-keyscan)
+//   fixmate-known-hosts    Secret file            (output of ssh-keyscan)
 //
 // Required plugins: Pipeline, Credentials Binding, SSH Agent.
 
@@ -96,6 +96,15 @@ pipeline {
                     // starts. That is wrong for every SHA, not just the fallback -
                     // it fails identically with a real commit hash in it.
                     env.CI_TEST_IMAGE = "fixmate/app:ci-${env.GIT_SHA}"
+                    // Same story as GIT_SHA, and it matters more here. The
+                    // workspace is left on a detached HEAD, so neither
+                    // `git rev-parse --abbrev-ref HEAD` ("HEAD") nor
+                    // `git symbolic-ref` (nothing) can recover the branch from
+                    // the checkout on disk. It is only in the returned map, as
+                    // GIT_BRANCH, holding "origin/main". Without this the Deploy
+                    // stage compares "" against "main", finds them unequal, and
+                    // refuses every production deploy.
+                    env.GIT_BRANCH = scmVars.GIT_BRANCH ?: ''
                 }
                 sh 'git log -1 --pretty="%h %an %s"'
             }
@@ -189,10 +198,16 @@ pipeline {
                             SSH_OPTS="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
 
                             # Production only takes main, unless this is a
-                            # reviewed CHANGE_ID build (GIT_BRANCH is
-                            # "origin/main" on multibranch, "main" otherwise).
-                            BRANCH="${GIT_BRANCH##*/}"
-                            if [ "$TARGET" = "production" ] && [ "$BRANCH" != "main" ] && [ -z "$CHANGE_ID" ]; then
+                            # reviewed CHANGE_ID build.
+                            # The :- defaults are load-bearing, because this is
+                            # /bin/sh (dash), not bash: ${VAR##*/} on an unset VAR
+                            # under `set -u` is a hard "parameter not set" and
+                            # exit 2, not an empty string. CHANGE_ID is only ever
+                            # set on a multibranch job, and this is a plain
+                            # WorkflowJob, so it is never set at all.
+                            BRANCH="${GIT_BRANCH:-}"
+                            BRANCH="${BRANCH##*/}"
+                            if [ "$TARGET" = "production" ] && [ "$BRANCH" != "main" ] && [ -z "${CHANGE_ID:-}" ]; then
                                 echo "Refusing to deploy '${BRANCH}' to production." >&2
                                 exit 1
                             fi
