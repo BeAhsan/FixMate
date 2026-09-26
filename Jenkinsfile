@@ -75,13 +75,10 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                // The return value, not env.GIT_COMMIT. The git plugin publishes
-                // GIT_COMMIT to the build environment from the BuildData that
-                // checkout attaches, and that does not reach env within the same
-                // stage that created it. Reading env.GIT_COMMIT here yields null,
-                // the 'local' fallback catches it, and the build carries on
-                // tagging images 'local' - which is the kind of thing that only
-                // becomes visible when two images with the same tag meet.
+                // Inside script, because a Declarative steps block admits only
+                // steps: a bare `def scmVars = checkout scm` fails to compile
+                // with "Expected a step", since assigning the result is not one.
+                //
                 // The return value, not env.GIT_COMMIT. The git plugin publishes
                 // GIT_COMMIT to the build environment from the BuildData that
                 // checkout attaches, and that does not reach env within the same
