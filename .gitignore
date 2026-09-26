@@ -30,3 +30,16 @@ Thumbs.db
 # Jenkins controller secrets, filled in from deploy/jenkins/secrets/config.example
 deploy/jenkins/secrets/*
 !deploy/jenkins/secrets/config.example
+
+# npm workspaces. Unanchored, because npm hoists a workspace's own
+# node_modules into the package directory when there is a conflict.
+/node_modules
+node_modules
+
+# The generated typed client. Produced fresh by `php artisan api-client:generate`
+# in the build, never committed: a committed copy could go stale, which is the
+# one failure this package exists to prevent.
+packages/*/src/generated
+
+# Test runner caches
+.vite

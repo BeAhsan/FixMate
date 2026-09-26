@@ -9,6 +9,14 @@ person could actually do. Every later back-end ticket copies a pattern proven
 here, so this ticket stays deliberately thin — failure behaviour and throttling
 are separate tickets.
 
+**Fortify implementation, concretely (from research):**
+- `FortifyServiceProvider::boot()` calls `Fortify::ignoreRoutes()` before any parent call
+- Feature flags: only `Features::resetPasswords()` enabled; `registration`, `emailVerification`, `updateProfileInformation`, `updatePasswords`, `twoFactorAuthentication`, `passkeys` disabled
+- Four `GuardAwareLoginRateLimiter` singletons bound in `register()`: one per guard, each overriding `throttleKey()` to prefix with guard name (`users|email|ip`, `workers|email|ip`, etc.)
+- Four login controllers (`UserLoginController`, `WorkerLoginController`, etc.), each constructed via DI with `Auth::guard('users')`, `Auth::guard('workers')`, etc., and their own limiter instance
+- `AttemptToAuthenticate`, `EnsureLoginIsNotThrottled`, `CanonicalizeUsername`, `PrepareAuthenticatedSession` are wired per-controller from Fortify's action classes — not from a shared global pipeline
+- `config('fortify.guard')` and `config('fortify.passwords')` are NOT mutated at runtime
+
 **Blocked by:** 02 (four credential stores)
 
 **Status:** ready-for-agent

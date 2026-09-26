@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\Admin;
+use App\Models\SuperAdmin;
 use App\Models\User;
+use App\Models\Worker;
 
 return [
 
@@ -16,9 +19,30 @@ return [
     */
 
     'defaults' => [
-        'guard' => env('AUTH_GUARD', 'web'),
+        'guard' => env('AUTH_GUARD', 'users'),
         'passwords' => env('AUTH_PASSWORD_BROKER', 'users'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Sign-in rate limiting
+    |--------------------------------------------------------------------------
+    |
+    | Failed sign-in attempts allowed per address, per IP address, per minute.
+    | Counted separately for each account type, so exhausting one does not lock
+    | the same address out of the others. See AppServiceProvider for the
+    | limiters themselves, which are named per account type.
+    |
+    | This is configuration rather than a constant because the right number
+    | depends on deployment: a private network and the public internet do not
+    | want the same threshold, and a threshold that cannot be changed without a
+    | code edit will be wrong for one of them.
+    |
+    */
+
+    'login_max_attempts' => (int) env('AUTH_LOGIN_MAX_ATTEMPTS', 5),
+
+    'login_decay_minutes' => (int) env('AUTH_LOGIN_DECAY_MINUTES', 1),
 
     /*
     |--------------------------------------------------------------------------
@@ -33,14 +57,42 @@ return [
     | users are actually retrieved out of your database or other storage
     | system used by the application. Typically, Eloquent is utilized.
     |
-    | Supported: "session"
+    | Supported: "session", "token"
     |
     */
 
     'guards' => [
-        'web' => [
+        'users' => [
             'driver' => 'session',
             'provider' => 'users',
+        ],
+        'workers' => [
+            'driver' => 'session',
+            'provider' => 'workers',
+        ],
+        'admins' => [
+            'driver' => 'session',
+            'provider' => 'admins',
+        ],
+        'super_admins' => [
+            'driver' => 'session',
+            'provider' => 'super_admins',
+        ],
+        'api_users' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
+        'api_workers' => [
+            'driver' => 'sanctum',
+            'provider' => 'workers',
+        ],
+        'api_admins' => [
+            'driver' => 'sanctum',
+            'provider' => 'admins',
+        ],
+        'api_super_admins' => [
+            'driver' => 'sanctum',
+            'provider' => 'super_admins',
         ],
     ],
 
@@ -64,13 +116,20 @@ return [
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', User::class),
+            'model' => User::class,
         ],
-
-        // 'users' => [
-        //     'driver' => 'database',
-        //     'table' => 'users',
-        // ],
+        'workers' => [
+            'driver' => 'eloquent',
+            'model' => Worker::class,
+        ],
+        'admins' => [
+            'driver' => 'eloquent',
+            'model' => Admin::class,
+        ],
+        'super_admins' => [
+            'driver' => 'eloquent',
+            'model' => SuperAdmin::class,
+        ],
     ],
 
     /*
@@ -96,6 +155,24 @@ return [
         'users' => [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'expire' => 60,
+            'throttle' => 60,
+        ],
+        'workers' => [
+            'provider' => 'workers',
+            'table' => 'worker_password_reset_tokens',
+            'expire' => 60,
+            'throttle' => 60,
+        ],
+        'admins' => [
+            'provider' => 'admins',
+            'table' => 'admin_password_reset_tokens',
+            'expire' => 60,
+            'throttle' => 60,
+        ],
+        'super_admins' => [
+            'provider' => 'super_admins',
+            'table' => 'super_admin_password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
         ],

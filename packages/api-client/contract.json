@@ -1,0 +1,40 @@
+{
+    "$comment": [
+        "The front ends' recorded expectation of the back end's API. The generated",
+        "client is not committed, so this file is what `php artisan api-client:check`",
+        "compares a fresh generation against. Every field is a duplicate of something",
+        "the back end also knows; that is the point, because a check cannot detect a",
+        "change it has no independent record of.",
+        "",
+        "route   the Laravel route name the function is generated from",
+        "method  the HTTP verb the function must answer",
+        "path    the URL the function must produce, including the /api prefix",
+        "name    the operation name in packages/api-client/src/operations.ts"
+    ],
+    "operations": [
+        {
+            "name": "signInUser",
+            "route": "users.signin",
+            "method": "post",
+            "path": "/api/v1/identity/users/sign-in"
+        },
+        {
+            "name": "signInWorker",
+            "route": "workers.signin",
+            "method": "post",
+            "path": "/api/v1/identity/workers/sign-in"
+        },
+        {
+            "name": "signInAdmin",
+            "route": "admins.signin",
+            "method": "post",
+            "path": "/api/v1/identity/admins/sign-in"
+        },
+        {
+            "name": "signInSuperAdmin",
+            "route": "super-admins.signin",
+            "method": "post",
+            "path": "/api/v1/identity/super-admins/sign-in"
+        }
+    ]
+}

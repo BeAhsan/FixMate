@@ -1,0 +1,24 @@
+{
+    "name": "@fixmate/api-client",
+    "version": "0.0.0",
+    "private": true,
+    "description": "The single place that knows how to talk to the FixMate back end: generated route functions, token attachment, response validation and error normalisation.",
+    "type": "module",
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "exports": {
+        ".": "./src/index.ts",
+        "./generated/*": "./src/generated/*"
+    },
+    "files": [
+        "src"
+    ],
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "test": "vitest run"
+    },
+    "devDependencies": {
+        "typescript": "^5.9.0",
+        "vitest": "^4.1.11"
+    }
+}

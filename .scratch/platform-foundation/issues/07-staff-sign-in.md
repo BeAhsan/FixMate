@@ -7,6 +7,11 @@ a flag, so that promoting someone moves a record instead of setting a flag, and
 so the most powerful account type stays narrow and countable. Together with the
 worker and end user, this completes the four doors.
 
+**Fortify pattern (from research):** `AdminLoginController` /
+`SuperAdminLoginController` constructed with `Auth::guard('admins')` /
+`Auth::guard('super_admins')` and their own `GuardAwareLoginRateLimiter`
+singletons — same DI pattern as the user controller, different guards.
+
 **Blocked by:** 03 (sign in as an end user)
 
 **Status:** ready-for-agent
