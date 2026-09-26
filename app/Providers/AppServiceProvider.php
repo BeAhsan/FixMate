@@ -2,10 +2,14 @@
 
 namespace App\Providers;
 
+use App\Domain\IdentityAndAccess\Repositories\AdminRepository;
 use App\Domain\IdentityAndAccess\Repositories\EndUserRepository;
+use App\Domain\IdentityAndAccess\Repositories\SuperAdminRepository;
 use App\Domain\IdentityAndAccess\Repositories\WorkerRepository;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
+use App\Infrastructure\IdentityAndAccess\Repositories\EloquentAdminRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentEndUserRepository;
+use App\Infrastructure\IdentityAndAccess\Repositories\EloquentSuperAdminRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentWorkerRepository;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\JsonResponse;
@@ -45,9 +49,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Bind domain repository interfaces to Eloquent implementations
+        // Bind domain repository interfaces to Eloquent implementations.
+        //
+        // One binding per credential store, and no implementation mentions
+        // another store's model. That is what makes "checked against the admins
+        // table only" a property of the wiring rather than a promise in a
+        // comment, and it is why these four live together: adding a fifth
+        // account type is two more lines here and nowhere else.
         $this->app->bind(EndUserRepository::class, EloquentEndUserRepository::class);
         $this->app->bind(WorkerRepository::class, EloquentWorkerRepository::class);
+        $this->app->bind(AdminRepository::class, EloquentAdminRepository::class);
+        $this->app->bind(SuperAdminRepository::class, EloquentSuperAdminRepository::class);
 
         // The domain service needs the application's bcrypt cost so that its
         // decoy hash is as expensive to compute as a real one. Reading it here

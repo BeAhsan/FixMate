@@ -86,6 +86,12 @@ class AuthenticationSurfaceTest extends TestCase
 
     public function test_the_only_authentication_routes_are_the_sign_in_endpoints(): void
     {
+        // This list is written out on purpose, and is meant to be edited by hand
+        // when a fifth account type arrives. Deriving it from the routes would
+        // make this test tautological: it would report whatever the application
+        // happens to expose, which is the opposite of what a security surface
+        // check is for. Failing here means a new door was opened without anyone
+        // deciding it should be.
         $authenticationRoutes = collect(Route::getRoutes()->getRoutes())
             ->filter(fn ($route) => str_contains($route->uri(), 'sign-in'))
             ->map(fn ($route) => $route->uri())

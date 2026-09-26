@@ -230,11 +230,21 @@ class SignInIsThrottledTest extends TestCase
         $routes = collect(app('router')->getRoutes()->getRoutes())
             ->filter(fn ($route) => str_ends_with($route->uri(), 'sign-in'));
 
-        $this->assertCount(4, $routes, 'expected all four sign-in routes');
+        // Matched against the number of account types rather than a literal, so
+        // a fifth account type does not make this fail for the wrong reason. The
+        // count still has to be equal, so a route added without a limiter, or a
+        // limiter added without a route, is still caught.
+        $accountTypes = count(AppServiceProvider::LOGIN_LIMITERS);
+
+        $this->assertCount($accountTypes, $routes, 'every account type must have exactly one sign-in route');
 
         $middlewares = $routes->map(fn ($route) => collect($route->gatherMiddleware())
             ->first(fn ($m) => str_starts_with($m, 'throttle:')));
 
-        $this->assertCount(4, $middlewares->filter()->unique(), 'each sign-in route must name a different limiter');
+        $this->assertCount(
+            $accountTypes,
+            $middlewares->filter()->unique(),
+            'each sign-in route must name a different limiter, or two doors share one bucket'
+        );
     }
 }
