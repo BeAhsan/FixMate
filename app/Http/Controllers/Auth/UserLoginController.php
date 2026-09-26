@@ -3,8 +3,9 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Application\IdentityAndAccess\DTOs\SignInRequest as SignInDto;
+use App\Application\IdentityAndAccess\Exceptions\AccountSuspended;
+use App\Application\IdentityAndAccess\Exceptions\InvalidCredentials;
 use App\Application\IdentityAndAccess\UseCases\SignInEndUser;
-use App\Domain\IdentityAndAccess\Repositories\EndUserRepository;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\SignInRequest;
 use App\Http\Resources\Auth\SignInResource;
@@ -18,10 +19,16 @@ use Illuminate\Validation\ValidationException;
  */
 class UserLoginController extends Controller
 {
-    public function __construct(
-        private SignInEndUser $signInUseCase,
-        private EndUserRepository $userRepository,
-    ) {}
+    /**
+     * The key every sign-in refusal is reported under.
+     *
+     * It is deliberately not `email` or `password`. A refusal filed against one
+     * of the two fields tells the person which field to go and look at, and
+     * that is a distinction the refusal is not supposed to make.
+     */
+    private const REFUSAL_KEY = 'credentials';
+
+    public function __construct(private SignInEndUser $signInUseCase) {}
 
     /**
      * Handle sign-in request for end users.
@@ -34,16 +41,13 @@ class UserLoginController extends Controller
         try {
             // Execute use case
             $response = $this->signInUseCase->execute($dto);
-        } catch (\InvalidArgumentException $e) {
-            // Invalid credentials - return 422 with validation error format
-            throw ValidationException::withMessages([
-                'email' => [$e->getMessage()],
-            ]);
-        } catch (\DomainException $e) {
-            // Suspended account - return 422 with validation error format
-            throw ValidationException::withMessages([
-                'email' => [$e->getMessage()],
-            ]);
+        } catch (InvalidCredentials $e) {
+            // 422: the submitted pair of credentials is not one we can use.
+            throw $this->refusal($e->getMessage(), 422);
+        } catch (AccountSuspended $e) {
+            // 403: the credentials were fine and the account state is not.
+            // Distinct on purpose, and only reachable with the right password.
+            throw $this->refusal($e->getMessage(), 403);
         }
 
         // Find the Eloquent user using the repository (case-insensitive)
@@ -58,5 +62,15 @@ class UserLoginController extends Controller
         return (new SignInResource($responseData))
             ->response()
             ->setStatusCode(200);
+    }
+
+    /**
+     * Build the refusal response, carrying the status the refusal is entitled to.
+     */
+    private function refusal(string $message, int $status): ValidationException
+    {
+        return ValidationException::withMessages([
+            self::REFUSAL_KEY => [$message],
+        ])->status($status);
     }
 }

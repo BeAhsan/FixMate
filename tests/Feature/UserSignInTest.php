@@ -70,8 +70,8 @@ class UserSignInTest extends TestCase
         ]);
 
         $response->assertUnprocessable();
-        $response->assertJsonValidationErrors(['email']);
-        $this->assertStringContainsString('The provided credentials are incorrect.', $response->json('message'));
+        $response->assertJsonValidationErrors(['credentials']);
+        $this->assertStringContainsString('These credentials do not match our records.', $response->json('message'));
     }
 
     /**
@@ -85,8 +85,8 @@ class UserSignInTest extends TestCase
         ]);
 
         $response->assertUnprocessable();
-        $response->assertJsonValidationErrors(['email']);
-        $this->assertStringContainsString('The provided credentials are incorrect.', $response->json('message'));
+        $response->assertJsonValidationErrors(['credentials']);
+        $this->assertStringContainsString('These credentials do not match our records.', $response->json('message'));
     }
 
     /**
@@ -106,7 +106,7 @@ class UserSignInTest extends TestCase
             'password' => $password,
         ]);
 
-        $response->assertUnprocessable();
+        $response->assertForbidden();
         $this->assertStringContainsString('suspended', $response->json('message'));
     }
 
@@ -153,7 +153,7 @@ class UserSignInTest extends TestCase
         ]);
 
         $response->assertUnprocessable();
-        $this->assertStringContainsString('The provided credentials are incorrect.', $response->json('message'));
+        $this->assertStringContainsString('These credentials do not match our records.', $response->json('message'));
     }
 
     /**
