@@ -4,13 +4,7 @@
 .github
 
 # Installed by the image's own stages — never copy from the host.
-node_modules
 vendor
-
-# Built inside the image by the assets stage.
-public/build
-public/hot
-public/fonts-manifest.dev.json
 
 # Secrets
 .env
@@ -42,7 +36,12 @@ deploy/
 README.md
 AGENTS.md
 CLAUDE.md
+# `*.md` only matches at the root, so nested docs need this or they ship in the
+# image via `COPY . .` in the vendor stage.
 *.md
+/docs
+/.opencode
+/.claude
 
 .DS_Store
 Thumbs.db

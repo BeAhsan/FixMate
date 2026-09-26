@@ -1,13 +1,11 @@
 # Local development stack.
 #
 #   docker compose up -d --build
-#   docker compose --profile hot up -d      # also run the Vite dev server
 #
-# Source is bind-mounted, so PHP edits are picked up immediately. Two host-side
-# prerequisites, because the bind mount shadows whatever the image baked in:
+# Source is bind-mounted, so PHP edits are picked up immediately. One host-side
+# prerequisite, because the bind mount shadows whatever the image baked in:
 #
 #   composer install     # populates ./vendor for the mounted code
-#   npm install && npm run build
 #
 # .env is read from the bind mount, so the normal Laravel file just works.
 
@@ -91,18 +89,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    networks: [fixmate]
-
-  # Opt-in Vite dev server for CSS/JS hot reload: docker compose --profile hot up -d
-  assets:
-    image: node:22-alpine
-    profiles: [hot]
-    working_dir: /var/www/html
-    volumes:
-      - .:/var/www/html
-    environment:
-      APP_NAME: ${APP_NAME:-FixMate}
-    command: sh -c "npm install --no-audit --no-fund && npm run dev"
     networks: [fixmate]
 
   mysql:
