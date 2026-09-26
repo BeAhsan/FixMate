@@ -7,6 +7,11 @@ user's sign-in generalises rather than having been built to fit one case, and
 that a worker's commercial attributes live on the worker record rather than on a
 customer's.
 
+**Fortify pattern (from research):** `WorkerLoginController` constructed with
+`Auth::guard('workers')` and `GuardAwareLoginRateLimiter` bound as
+`fortify.limiter.workers` — same DI pattern as the user controller, different
+guard.
+
 **Blocked by:** 03 (sign in as an end user)
 
 **Status:** ready-for-agent

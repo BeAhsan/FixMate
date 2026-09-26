@@ -235,16 +235,35 @@ decision rather than from Fortify. Fortify's configuration is a single global
 file holding a single user model, a single guard, a single path prefix, and one
 set of routes. It is built to serve one account type. So Fortify is installed
 with its views disabled and only the features this work needs enabled, its route
-registration is not used, and the four sign-in endpoints and their password reset
-flows are registered by this application — each bound to its own guard, each
-reusing Fortify's actions for the parts that are genuinely reusable.
+registration is suppressed via `Fortify::ignoreRoutes()`, and the four sign-in
+endpoints and their password reset flows are registered by this application —
+each bound to its own guard, each reusing Fortify's actions for the parts that
+are genuinely reusable.
 
-**The cost of that choice, stated plainly.** It depends on Fortify's action
-classes, which are internal to the package rather than public API. They are
-mature and stable, and a breaking change would surface as a test failure rather
-than a silent behaviour change. If Fortify ever moves those classes in a
-release, the fix is confined to one adapter — but the dependency is real and
-should be reconsidered at the next major version rather than ignored.
+**The throttle key must include the guard.** Fortify's `LoginRateLimiter`
+builds its key from `email|ip` and does not include the guard, so four endpoints
+on four guards would share one rate-limit bucket by default — an attacker could
+trip one door and lock out all four account types. A `GuardAwareLoginRateLimiter`
+subclass prefixes the key with the guard name (`users|email|ip`,
+`workers|email|ip`, etc.), so the four doors throttle independently. This is the
+one place the four-guard requirement changes the off-the-shelf behaviour, and it
+is covered by its own test (ticket 05).
+
+**Fortify does not ship password-reset action classes.** It publishes *stubs*
+for `ResetUserPassword` and `UpdateUserPassword` that implement the
+`ResetsUserPasswords` and `UpdatesUserPasswords` interfaces — those stubs are
+your code, not Fortify's. The stub `UpdateUserPassword` hardcodes the validation
+rule `current_password:web`, so each account type needs its own implementation
+with the correct guard. This is why the four password-reset flows are separate
+implementations rather than one reused class, and it is a smaller code footprint
+than it sounds.
+
+**Per-request guard mutation is a trap.** Mutating `config('fortify.guard')` in
+middleware works in a single-threaded request but breaks under Octane or queue
+workers where global config is shared across concurrent requests. The correct
+pattern is explicit DI: four controller classes, each constructed with
+`Auth::guard('users')`, `Auth::guard('workers')`, etc., and their own
+`LoginRateLimiter` instance. The one adapter boundary stays one blast radius.
 
 **What this buys.** Login throttling, which is the reason to want Fortify here
 at all. Four unguarded sign-in endpoints is a brute-force amplifier, and
@@ -259,9 +278,12 @@ switched off rather than left installed and unused.
 model, so a credential is only ever checked against the table behind the guard
 that the request arrived on. Fortify's `views` option is `false`, which disables
 its view routes; that is the mode intended for a JavaScript client, and it is
-what keeps Blade out of the back end. A single adapter is the only code in the
-application that touches Fortify's action classes, which is what gives the
-internal-API dependency named above one blast radius rather than four.
+what keeps Blade out of the back end. A single `FortifyServiceProvider` calls
+`Fortify::ignoreRoutes()`, disables every feature except `resetPasswords()`,
+binds four `GuardAwareLoginRateLimiter` singletons, and wires the per-guard
+action implementations. A single adapter is the only code in the application
+that touches Fortify's action classes, which is what gives the internal-API
+dependency named above one blast radius rather than four.
 
 **Four account types, four credential stores.** End users, workers,
 administrators and super administrators each have their own table, their own
