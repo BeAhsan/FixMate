@@ -2,14 +2,14 @@
 
 namespace Database\Factories;
 
-use App\Models\User;
+use App\Models\SuperAdmin;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 
 /**
- * @extends Factory<User>
+ * @extends Factory<SuperAdmin>
  */
-class UserFactory extends Factory
+class SuperAdminFactory extends Factory
 {
     /**
      * The current password being used by the factory.
@@ -32,7 +32,7 @@ class UserFactory extends Factory
     }
 
     /**
-     * Indicate that the user's account is suspended.
+     * Indicate that the super admin's account is suspended.
      */
     public function suspended(): static
     {
