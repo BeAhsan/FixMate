@@ -45,7 +45,29 @@ RUN apt-get update \
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
 RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt --latest false
 
-# Scripts in this directory run once, on first boot, before the UI comes up.
+# Scripts in this directory run before the UI comes up, on every start.
 COPY init.groovy.d/ /usr/share/jenkins/ref/init.groovy.d/
+
+# ...but a plain COPY into ref/ is not enough to make that true. The image's
+# copy_reference_file copies a non-plugin file out of the image only when it is
+# not already present in JENKINS_HOME:
+#
+#     if [[ ! -e $JENKINS_HOME/${rel} || $f = *.override ]]
+#
+# JENKINS_HOME is a named volume, so the copy made on the very first boot
+# outranks every later image forever. A corrected script ships in the image and
+# is then silently ignored, and the symptom is a controller that boots healthy,
+# reports no error, and quietly runs yesterday's code - which is exactly the
+# failure that made this look like an unfixed image.
+#
+# A ref file named *.override is the mechanism the image provides for "always
+# take mine". The .override is stripped on the way in, so it lands in
+# JENKINS_HOME under the .groovy name Jenkins actually looks for. Shipping both
+# copies is safe: whichever order find(1) reaches them in, the .override is the
+# one that ends up in JENKINS_HOME.
+RUN set -eux; \
+    for f in /usr/share/jenkins/ref/init.groovy.d/*.groovy; do \
+        cp -p "$f" "$f.override"; \
+    done
 
 USER jenkins
