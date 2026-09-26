@@ -25,3 +25,13 @@ git
 
 # Keep disk usage bounded on long-lived controllers
 ws-cleanup
+
+# Pinned only because it has to be. ws-cleanup needs matrix-project, which the
+# base image bundles, and the bundled matrix-project requires a newer junit than
+# the junit the same base image bundles - so the two fail to load together and
+# take ws-cleanup down with them. Naming a current junit satisfies it.
+#
+# The moment this pin is no longer needed is the moment it should go; if a
+# future Jenkins bumps the bundled pair into agreement, delete this line rather
+# than raise it.
+junit:1431.vc0d98912a_756
