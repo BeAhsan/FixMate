@@ -1,6 +1,15 @@
 'use client'
 
-import { Alert, AppShell, Button, Field, fieldInputProps, type ShellSection } from '@fixmate/ui'
+import {
+    Alert,
+    AppShell,
+    Button,
+    Field,
+    PasswordField,
+    PrivacyNotice,
+    fieldInputProps,
+    type ShellSection,
+} from '@fixmate/ui'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
     createContext,
@@ -286,20 +295,18 @@ export function SignInForm({
                     )}
                 </Field>
 
-                <Field label="Password">
-                    {(props) => (
-                        <input
-                            {...fieldInputProps(props, {
-                                name: 'password',
-                                type: 'password',
-                                autoComplete: 'current-password',
-                                required: true,
-                                className:
-                                    'rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900',
-                            })}
-                        />
-                    )}
-                </Field>
+                {/*
+                    The design system's password field rather than an input with a
+                    `type` on it, so the reveal control and this label association
+                    are the same in the four applications as they are in the reset
+                    flow. `current-password` is what tells a password manager this
+                    is an existing password rather than a new one.
+                */}
+                <PasswordField
+                    label="Password"
+                    name="password"
+                    autoComplete="current-password"
+                />
 
                 <Button type="submit" disabled={pending}>
                     {pending ? 'Signing in…' : 'Sign in'}
@@ -312,6 +319,13 @@ export function SignInForm({
                 */}
                 {failure !== null && <Alert tone="error">{failure.message}</Alert>}
             </form>
+
+            {/*
+                After the form, not before it. A notice above the fold competes
+                with the thing the person came to do, and this one is on the same
+                screen either way.
+            */}
+            <PrivacyNotice />
         </main>
     )
 }

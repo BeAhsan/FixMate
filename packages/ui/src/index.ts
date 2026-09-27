@@ -27,6 +27,9 @@ export { Field, fieldInputProps } from './primitives/field'
 export type { FieldProps } from './primitives/field'
 
 export { Button } from './primitives/button'
+export { PrivacyNotice } from './primitives/privacy-notice'
+export { PasswordField } from './primitives/password-field'
+export type { PasswordFieldProps } from './primitives/password-field'
 export type { ButtonProps } from './primitives/button'
 
 export { Alert } from './primitives/alert'

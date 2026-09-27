@@ -565,6 +565,43 @@ never enter an image layer.
   deliberately indistinguishable between an unknown address, a wrong password
   and a suspended account, so a second wording in the front end is a second
   chance to leak which one it was.
+- **`PasswordField` is a design-system primitive, not a sign-in detail.** Story 18
+  and story 21 both need it, and all four applications share the sign-in screen, so
+  it lives in `packages/ui` and is built on `Field` — which is what keeps the
+  label association, the hint wiring and the announced error identical to every
+  other field. Two things about it are not obvious:
+  - **The toggle is `type="button"` and sits *after* the input in the DOM.** A
+    button inside a form defaults to submitting, so a reveal control that submitted
+    would sign the person in with a half-typed password. And tab order follows DOM
+    order, so an eye icon floated to the *left* of the field is reached before the
+    input — a keyboard user would toggle the reveal before ever reaching the
+    password.
+  - **`autoComplete` is a required prop, not defaulted.** `current-password` and
+    `new-password` mean different things to a password manager, and a wrong value
+    is a reason for it to offer nothing at all — which would quietly undo story 17.
+- **jsdom does not implement form submission from a button click.** Asserting
+  `onSubmit` was not called proves nothing there: the test passes with
+  `type="button"` deleted. Assert the *attribute* instead, which is what a browser
+  reads. This was found by deleting the attribute and watching the test stay green.
+- **The sign-in screen is not in the static export, and grepping for it there
+  proves nothing.** `app/sign-in/page.tsx` prerenders the `<Suspense>` fallback —
+  an empty `<main>` — because `SignInScreen` reads the query string. The screen
+  renders client-side, so verifying it needs a component test, not `grep` on
+  `out/sign-in.html`. `packages/session` has no jsdom, so
+  `sign-in-screen.test.tsx` uses `react-dom/server`, which is already a dev
+  dependency there; it confirms composition and attributes, and the clicking is
+  tested where the component lives, in `packages/ui`.
+- **A primitive that is exported and tested but never rendered is a feature that
+  does not exist**, and no test in `packages/ui` can notice — those tests render
+  the primitive directly. `sign-in-screen.test.tsx` exists to catch the primitive
+  being dropped from `SignInForm`, and both of those mutations were applied to
+  confirm it fails when it is.
+- **The privacy notice's wording is a placeholder for a product decision.** It
+  claims only what this codebase can support — what is sent, that the password is
+  not stored or kept in the browser, the renewal token and its rotation, the
+  sign-in throttle — and a test asserts those claims are present *and* that
+  retention, sharing and erasure are **not** claimed, because none of the three is
+  something the code can currently answer.
 - **`lib/sign-in-failure.ts` imports `ApiError` from `@fixmate/api-client`, not
   from `lib/api`.** `lib/api` builds the client at module load and throws
   without an address, so importing it would make the wording module unloadable
