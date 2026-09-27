@@ -59,11 +59,30 @@ Thumbs.db
 # already says npm nests; this one has to agree.
 **/node_modules
 
-# The generated typed client is produced fresh by `php artisan
-# api-client:generate` in the container, so copying a host copy in would defeat
-# the point. packages/api-client/contract.json and src/ DO ship: the drift check
-# reads them out of this image.
-packages/*/src/generated
+# The generated typed client is NOT excluded, and that is deliberate.
+#
+# It used to be, on the reasoning recorded here before: "produced fresh by
+# `php artisan api-client:generate` in the container, so copying a host copy in
+# would defeat the point." That reasoning cannot hold for the API image. It
+# installs `--no-dev`, and `laravel/wayfinder` is a `require-dev` dependency, so
+# `api-client:generate` is not a command the API image can run at all - nothing
+# in the Dockerfile or the entrypoint invokes it. The exclusion therefore
+# protected nothing, and it cost something real: the front-end images are built
+# from this same context and cannot typecheck or build without these files,
+# because @fixmate/api-client re-exports operations that import from them.
+#
+# The spec's own plan agrees. It has the pipeline generate the client in a
+# throwaway PHP container *before* the front-end images are built from the same
+# workspace, which only works if the output is in the build context.
+#
+# What actually keeps the client honest is `php artisan api-client:check`, which
+# regenerates into a temp directory and fails on a difference. That runs in CI
+# and in the pipeline, where PHP and the dev dependencies are present, and it
+# does not depend on this file at all.
+#
+# The API image now carries a few dozen unused small files. That is the cheaper
+# mistake: dead weight in an image nothing reads, versus a front end that cannot
+# build.
 
 # Front-end build output. `apps/user` produces the first two of these; the
 # other three applications arrive with tickets 15 to 19 and need no change here

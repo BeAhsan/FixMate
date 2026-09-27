@@ -3,6 +3,15 @@
 .env
 .env.backup
 .env.production
+# Next.js reads `.env.local` before `.env`, and it is the file a developer
+# actually creates to point a host build at a different back end. The three
+# patterns above do not cover it, and an unlisted `.env*` file is exactly the
+# thing that gets committed by `git add -A`.
+#
+# `.env.example` is matched by none of these and stays tracked, which is why
+# there is no negation here: a pattern that ends in `.local` cannot catch it.
+.env.local
+.env.*.local
 .phpactor.json
 .phpunit.result.cache
 /.codex
