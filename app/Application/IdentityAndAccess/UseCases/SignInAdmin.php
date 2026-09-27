@@ -69,6 +69,7 @@ class SignInAdmin
             // administrator token that could do anything would make the
             // super_admins table decorative.
             abilities: AccountType::Admin->abilities(),
+            mustChangePassword: $admin->mustChangePassword,
             subject: 'admin',
         );
     }

@@ -63,6 +63,7 @@ class SignInWorker
             name: $worker->name,
             email: $worker->email->value,
             abilities: AccountType::Worker->abilities(),
+            mustChangePassword: $worker->mustChangePassword,
             subject: 'worker',
         );
     }

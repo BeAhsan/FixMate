@@ -57,6 +57,25 @@ final class AuthenticationService
     }
 
     /**
+     * Hash a plaintext password with the configured cost.
+     *
+     * Sits beside `verifyCredentials()` rather than in a use case or a repository
+     * because the *cost* is the thing that has to be consistent, and it is
+     * configured here. A use case that called `password_hash()` with its own
+     * default would produce hashes at a different cost from the ones every account
+     * already has, and the two would be indistinguishable in the column — so the
+     * defect would be a slow sign-in nobody could trace back to this.
+     *
+     * Also the only place in the domain that turns a password into a hash, which is
+     * what makes "no plaintext password is ever persisted" a property of the layer
+     * rather than a habit.
+     */
+    public function hash(string $plainPassword): string
+    {
+        return password_hash($plainPassword, PASSWORD_BCRYPT, ['cost' => $this->bcryptCost]);
+    }
+
+    /**
      * Check if an account exists and is active.
      * Used for consistent error responses (prevents user enumeration).
      */

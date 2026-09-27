@@ -10,7 +10,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'status'])]
+#[Fillable(['name', 'email', 'password', 'status', 'must_change_password'])]
 #[Hidden(['password', 'remember_token'])]
 class Admin extends Authenticatable
 {
@@ -28,6 +28,13 @@ class Admin extends Authenticatable
     {
         return [
             'password' => 'hashed',
+
+            // Cast, so the attribute is a real boolean rather than the 0 or 1
+            // the database returns. Without it a cleared `must_change_password` of 0 is
+            // *not* `false` under a strict comparison, so every assertion about the
+            // flag - and any `=== false` anywhere else - reads a cleared flag as still
+            // set. Truthiness in an `if` hides it; strictness does not.
+            'must_change_password' => 'boolean',
         ];
     }
 }

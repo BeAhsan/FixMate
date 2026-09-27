@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureAccountCan;
+use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\EnsureSessionCan;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -23,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
             // `account.can:super_admins,accounts:read` says who may knock *and*
             // what they must be able to do.
             'account.can' => EnsureAccountCan::class,
+            'password.changed' => EnsurePasswordChanged::class,
 
             // The mirror of the above, for the renewal route. A renewal token
             // is refused by `account.can` and allowed only by this, so the two

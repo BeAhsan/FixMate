@@ -66,6 +66,7 @@ class SignInEndUser
             name: $user->name,
             email: $user->email->value,
             abilities: AccountType::User->abilities(),
+            mustChangePassword: $user->mustChangePassword,
         );
     }
 }

@@ -56,6 +56,12 @@ class EloquentEndUserRepository implements EndUserRepository
                 'email' => $user->email->value,
                 'password' => $user->passwordHash,
                 'status' => $user->status->value,
+                // Written because the entity carries it. Omitting it here is a bug
+                // that is invisible until something tries to clear the flag: `updateOrCreate`
+                // writes only the keys it is given, so a save() that left this out
+                // would keep the stored value whatever the domain had decided, and
+                // `must_change_password` could never be cleared.
+                'must_change_password' => $user->mustChangePassword,
             ]
         );
 
@@ -70,6 +76,7 @@ class EloquentEndUserRepository implements EndUserRepository
             email: $eloquentUser->email,
             passwordHash: $eloquentUser->password,
             status: $eloquentUser->status,
+            mustChangePassword: (bool) $eloquentUser->must_change_password,
         );
     }
 }

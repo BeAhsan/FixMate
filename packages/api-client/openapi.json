@@ -1107,6 +1107,198 @@
           }
         }
       }
+    },
+    "/api/v1/identity/users/password/change": {
+      "post": {
+        "operationId": "changePasswordUser",
+        "x-laravel-route": "users.password.change",
+        "x-required-account-type": "users",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Replace the signed-in account's password.",
+        "description": "Replaces the password of whoever is signed in and withdraws every other session that account held.\n\n**`current_password` is required and is not a convenience.** The access token proves who is asking; the current password proves it is the person rather than a copy of their session. Without it, anybody who found a token could set a new password and lock the real owner out permanently.\n\n**The account comes from the token.** There is no identifier in the path and none in the body, so there is nothing for a caller to change in order to reach an account that is not theirs. The only selector is the account type in the path, and the guard checks it - an end user's token is refused at the administrators' door.\n\n**Every other session is withdrawn**, on every device, because a session opened with the old password keeps working however new the stored hash is. The session making the change is spared, so the person is not signed out of the application they are standing in.\n\nThe new password is checked against the same policy the reset flow uses, and may not be the current one - otherwise \"you must change your password\" could be satisfied by submitting the shared password again, and the flag cleared with nothing changed.\n\nOne door per account type, matching the `me`, renew and sign-out routes. The account type is a literal in both the path and the guard, so the two cannot drift apart.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The account, as it is now signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentAccountResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailure"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/workers/password/change": {
+      "post": {
+        "operationId": "changePasswordWorker",
+        "x-laravel-route": "workers.password.change",
+        "x-required-account-type": "workers",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Replace the signed-in account's password.",
+        "description": "Replaces the password of whoever is signed in and withdraws every other session that account held.\n\n**`current_password` is required and is not a convenience.** The access token proves who is asking; the current password proves it is the person rather than a copy of their session. Without it, anybody who found a token could set a new password and lock the real owner out permanently.\n\n**The account comes from the token.** There is no identifier in the path and none in the body, so there is nothing for a caller to change in order to reach an account that is not theirs. The only selector is the account type in the path, and the guard checks it - an end user's token is refused at the administrators' door.\n\n**Every other session is withdrawn**, on every device, because a session opened with the old password keeps working however new the stored hash is. The session making the change is spared, so the person is not signed out of the application they are standing in.\n\nThe new password is checked against the same policy the reset flow uses, and may not be the current one - otherwise \"you must change your password\" could be satisfied by submitting the shared password again, and the flag cleared with nothing changed.\n\nOne door per account type, matching the `me`, renew and sign-out routes. The account type is a literal in both the path and the guard, so the two cannot drift apart.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The account, as it is now signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentAccountResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailure"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/admins/password/change": {
+      "post": {
+        "operationId": "changePasswordAdmin",
+        "x-laravel-route": "admins.password.change",
+        "x-required-account-type": "admins",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Replace the signed-in account's password.",
+        "description": "Replaces the password of whoever is signed in and withdraws every other session that account held.\n\n**`current_password` is required and is not a convenience.** The access token proves who is asking; the current password proves it is the person rather than a copy of their session. Without it, anybody who found a token could set a new password and lock the real owner out permanently.\n\n**The account comes from the token.** There is no identifier in the path and none in the body, so there is nothing for a caller to change in order to reach an account that is not theirs. The only selector is the account type in the path, and the guard checks it - an end user's token is refused at the administrators' door.\n\n**Every other session is withdrawn**, on every device, because a session opened with the old password keeps working however new the stored hash is. The session making the change is spared, so the person is not signed out of the application they are standing in.\n\nThe new password is checked against the same policy the reset flow uses, and may not be the current one - otherwise \"you must change your password\" could be satisfied by submitting the shared password again, and the flag cleared with nothing changed.\n\nOne door per account type, matching the `me`, renew and sign-out routes. The account type is a literal in both the path and the guard, so the two cannot drift apart.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The account, as it is now signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentAccountResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailure"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/super-admins/password/change": {
+      "post": {
+        "operationId": "changePasswordSuperAdmin",
+        "x-laravel-route": "super-admins.password.change",
+        "x-required-account-type": "super_admins",
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Replace the signed-in account's password.",
+        "description": "Replaces the password of whoever is signed in and withdraws every other session that account held.\n\n**`current_password` is required and is not a convenience.** The access token proves who is asking; the current password proves it is the person rather than a copy of their session. Without it, anybody who found a token could set a new password and lock the real owner out permanently.\n\n**The account comes from the token.** There is no identifier in the path and none in the body, so there is nothing for a caller to change in order to reach an account that is not theirs. The only selector is the account type in the path, and the guard checks it - an end user's token is refused at the administrators' door.\n\n**Every other session is withdrawn**, on every device, because a session opened with the old password keeps working however new the stored hash is. The session making the change is spared, so the person is not signed out of the application they are standing in.\n\nThe new password is checked against the same policy the reset flow uses, and may not be the current one - otherwise \"you must change your password\" could be satisfied by submitting the shared password again, and the flag cleared with nothing changed.\n\nOne door per account type, matching the `me`, renew and sign-out routes. The account type is a literal in both the path and the guard, so the two cannot drift apart.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The account, as it is now signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentAccountResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailure"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1680,6 +1872,23 @@
                 "description": "Present and null when the super administrator role is still narrow. A sentence when it is not, describing the role as it is now rather than as it will be \u2014 a fact the reader can check rather than a prediction they have to trust."
               }
             }
+          }
+        }
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "description": "The password this account is currently using. Verified against the stored hash, not against a rule: there is exactly one right answer to whether it is correct, and a wrong one is a 422 carrying the message."
+          },
+          "password": {
+            "type": "string",
+            "description": "The new password. Must satisfy the same policy as the reset flow, and must not be the current password \u2014 otherwise \"you must change your password\" could be satisfied by submitting the shared one again, and the flag cleared with nothing changed."
           }
         }
       }

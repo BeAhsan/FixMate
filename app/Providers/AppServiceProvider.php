@@ -7,10 +7,12 @@ use App\Domain\IdentityAndAccess\Repositories\EndUserRepository;
 use App\Domain\IdentityAndAccess\Repositories\SuperAdminRepository;
 use App\Domain\IdentityAndAccess\Repositories\WorkerRepository;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
+use App\Domain\IdentityAndAccess\Services\SessionRevoker;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentAdminRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentEndUserRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentSuperAdminRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentWorkerRepository;
+use App\Infrastructure\IdentityAndAccess\SanctumSessionRevoker;
 use App\Infrastructure\IdentityAndAccess\SessionTokenIssuer;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\JsonResponse;
@@ -89,6 +91,14 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(WorkerRepository::class, EloquentWorkerRepository::class);
         $this->app->bind(AdminRepository::class, EloquentAdminRepository::class);
         $this->app->bind(SuperAdminRepository::class, EloquentSuperAdminRepository::class);
+
+        // The session revoker, bound to the same shape as the four repositories above:
+        // a domain interface in the use case, one implementation in infrastructure,
+        // and the wiring in exactly one place. It is a `bind` rather than a
+        // `singleton` because it holds no state, and because a container that
+        // silently shared one would be sharing a decision about which sessions
+        // exist.
+        $this->app->bind(SessionRevoker::class, SanctumSessionRevoker::class);
 
         // The domain service needs the application's bcrypt cost so that its
         // decoy hash is as expensive to compute as a real one. Reading it here

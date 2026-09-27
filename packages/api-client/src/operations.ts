@@ -28,6 +28,10 @@ import {
     me as meSuperAdmin,
     resetPassword as resetPasswordSuperAdmin,
 } from './generated/routes/super-admins'
+import { change as changePasswordUserRoute } from './generated/routes/users/password'
+import { change as changePasswordWorkerRoute } from './generated/routes/workers/password'
+import { change as changePasswordAdminRoute } from './generated/routes/admins/password'
+import { change as changePasswordSuperAdminRoute } from './generated/routes/super-admins/password'
 import { array, nullable, number, object, string, type Schema } from './schema'
 import type { ApiClient, Route } from './http'
 
@@ -368,6 +372,19 @@ const acknowledgementResponse: Schema<{ data: AcknowledgementResult }> = object(
  * that renders an empty name looks like an empty account rather than a broken
  * contract.
  */
+/**
+ * A password change takes the current password and the new one.
+ *
+ * Both are required, and the current password is not a convenience. The access
+ * token proves who is asking; the current password proves it is the person rather
+ * than a copy of their session. Without it, anybody who found a token could set a
+ * new password and lock the real owner out permanently.
+ */
+const changePasswordRequest: Schema<{ current_password: string; password: string }> = object({
+    current_password: string(),
+    password: string(),
+})
+
 const currentAccountResponse: Schema<{ data: CurrentAccount }> = object({
     data: object({
         account_type: string(),
@@ -585,6 +602,50 @@ const definitions = {
     promoteAdmin: {
         route: (admin: number) => promoteAdminRoute({ admin }) satisfies Route,
         response: promotedAccountResponse,
+    },
+
+    /**
+     * Replace the signed-in account's password, and set every other session it had
+     * to nothing.
+     *
+     * One operation, four doors: `type` is the account type's own value, and each
+     * application passes its own. A token presented at another type's door is
+     * refused by the back end, which is what keeps this from being a way for an
+     * end user to reach the administrators' address.
+     *
+     * The response is the current account rather than an acknowledgement, because
+     * the front end has just invalidated every other session this account had and
+     * needs to know who it is still signed in as in order to render what comes
+     * next. It does not have to make a second request to find out whether the
+     * change worked.
+     */
+    // Four of them, for the same reason the `me` operations are four: each
+    // application calls its own door, and the back end refuses a token presented at
+    // the wrong one. Four operations rather than one taking a type, because the
+    // account type is then a literal in the path *and* in the guard, and cannot drift
+    // apart between them.
+    changePasswordUser: {
+        route: () => changePasswordUserRoute() satisfies Route,
+        body: changePasswordRequest,
+        response: currentAccountResponse,
+    },
+
+    changePasswordWorker: {
+        route: () => changePasswordWorkerRoute() satisfies Route,
+        body: changePasswordRequest,
+        response: currentAccountResponse,
+    },
+
+    changePasswordAdmin: {
+        route: () => changePasswordAdminRoute() satisfies Route,
+        body: changePasswordRequest,
+        response: currentAccountResponse,
+    },
+
+    changePasswordSuperAdmin: {
+        route: () => changePasswordSuperAdminRoute() satisfies Route,
+        body: changePasswordRequest,
+        response: currentAccountResponse,
     },
 
     // The session operations. Four of each, for the same reason the `me`

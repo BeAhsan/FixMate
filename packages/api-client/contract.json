@@ -157,6 +157,30 @@
       "path": "/api/v1/identity/super-admins/sign-out"
     },
     {
+      "name": "changePasswordUser",
+      "route": "users.password.change",
+      "method": "post",
+      "path": "/api/v1/identity/users/password/change"
+    },
+    {
+      "name": "changePasswordWorker",
+      "route": "workers.password.change",
+      "method": "post",
+      "path": "/api/v1/identity/workers/password/change"
+    },
+    {
+      "name": "changePasswordAdmin",
+      "route": "admins.password.change",
+      "method": "post",
+      "path": "/api/v1/identity/admins/password/change"
+    },
+    {
+      "name": "changePasswordSuperAdmin",
+      "route": "super-admins.password.change",
+      "method": "post",
+      "path": "/api/v1/identity/super-admins/password/change"
+    },
+    {
       "name": "showAdmin",
       "route": "admins.show",
       "method": "get",

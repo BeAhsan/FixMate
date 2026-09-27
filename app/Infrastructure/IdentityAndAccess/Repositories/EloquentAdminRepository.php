@@ -63,6 +63,12 @@ class EloquentAdminRepository implements AdminRepository
                 'email' => $admin->email->value,
                 'password' => $admin->passwordHash,
                 'status' => $admin->status->value,
+                // Written because the entity carries it. Omitting it here is a bug
+                // that is invisible until something tries to clear the flag: `updateOrCreate`
+                // writes only the keys it is given, so a save() that left this out
+                // would keep the stored value whatever the domain had decided, and
+                // `must_change_password` could never be cleared.
+                'must_change_password' => $admin->mustChangePassword,
             ]
         );
 
@@ -77,6 +83,7 @@ class EloquentAdminRepository implements AdminRepository
             email: $eloquentAdmin->email,
             passwordHash: $eloquentAdmin->password,
             status: $eloquentAdmin->status,
+            mustChangePassword: (bool) $eloquentAdmin->must_change_password,
         );
     }
 }

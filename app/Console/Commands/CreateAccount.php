@@ -127,6 +127,16 @@ class CreateAccount extends Command
             'email' => $address->value,
             'password' => Hash::make($password),
             'status' => 'active',
+            // The flag, and the reason the ticket that introduced this command
+            // could not set it at the time. `EnsurePasswordChanged` exists now, so
+            // setting it is no longer a claim without a control behind it: until the
+            // new owner replaces this password, every other route refuses them and
+            // the reset flow is their way out.
+            //
+            // An account created by this command has, by definition, never chosen its
+            // own password. So this is true of every account the command has ever
+            // made, which is the property story 21 is about.
+            'must_change_password' => true,
         ]);
 
         $this->reportCreated($type, $account, $password);
@@ -274,8 +284,11 @@ class CreateAccount extends Command
         $this->warn('  and it is not written to any log. If you lose it, run this command');
         $this->warn('  again with a different address, or use the password reset flow.');
         $this->newLine();
-        $this->line('  Sign in at the '.$type->label().' application, then use "forgot');
-        $this->line('  password" to set a password of your own.');
+        $this->line('  This account must set a password of its own before it can be used.');
+        $this->newLine();
+        $this->line('  Sign in at the '.$type->label().' application with the password above,');
+        $this->line('  and you will be taken straight to a screen to choose a new one. Until');
+        $this->line('  you do, every other part of the application refuses the session.');
         $this->newLine();
     }
 }

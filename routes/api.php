@@ -24,6 +24,7 @@ use App\Http\Controllers\Accounts\ShowAdminController;
 use App\Http\Controllers\Accounts\SuspendAdminController;
 use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\Auth\AdminPasswordResetController;
+use App\Http\Controllers\Auth\ChangePasswordController;
 use App\Http\Controllers\Auth\CurrentAccountController;
 use App\Http\Controllers\Auth\RenewSessionController;
 use App\Http\Controllers\Auth\SignOutController;
@@ -33,6 +34,7 @@ use App\Http\Controllers\Auth\UserLoginController;
 use App\Http\Controllers\Auth\UserPasswordResetController;
 use App\Http\Controllers\Auth\WorkerLoginController;
 use App\Http\Controllers\Auth\WorkerPasswordResetController;
+use App\Http\Middleware\EnsurePasswordChanged;
 use App\Providers\AppServiceProvider;
 
 // Identity and Access context routes
@@ -126,7 +128,7 @@ Route::prefix('v1/identity')
         // guard, which is not what an API token should be resolved by — and a
         // forgotten `auth:` would otherwise read the session cookie instead,
         // which is a different credential arriving at a bearer-token API.
-        Route::middleware('auth:sanctum')->group(function () {
+        Route::middleware(['auth:sanctum', EnsurePasswordChanged::ALIAS])->group(function () {
             // Who am I, one door per application.
             //
             // Four routes rather than one shared `/me`, because the four
@@ -180,8 +182,53 @@ Route::prefix('v1/identity')
                     ->middleware('session.can:'.$type->value)
                     ->name("{$segment}.session.renew");
 
+                // `withoutMiddleware` rather than a path check inside the guard, so the
+                // exemption is visible on the route and cannot be forgotten when a
+                // route is added.
+                //
+                // Sign-out is exempt because refusing it would be a trap. A person on
+                // a shared device who must change their password is *most* entitled to
+                // end the session, and signing out revokes their own tokens - a
+                // strictly larger reduction in their access than the guard could
+                // produce. Renewal is not exempt: a renewal token in browser storage
+                // that keeps buying access tokens would undo the whole rule.
                 Route::post("/{$segment}/sign-out", SignOutController::class)
+                    ->withoutMiddleware(EnsurePasswordChanged::ALIAS)
                     ->name("{$segment}.sign-out");
+            }
+
+            // Replace the signed-in account's password.
+            //
+            // Four doors for the same reason the four `me` doors and the four
+            // sign-out doors exist: each application calls its own, and a token
+            // presented at the wrong one is refused.
+            //
+            // `account.can` with the account type and **no ability**, which is
+            // deliberate and not an omission. Changing your own password is not a
+            // privilege - it is the one thing every signed-in account may do - so
+            // there is no ability to name, and inventing one would put a token claim
+            // in front of a self-service action.
+            //
+            // Four doors rather than one `/{type}/password/change`, and the reason is
+            // not tidiness. **Laravel does not substitute route parameters inside a
+            // middleware string**: `account.can:{type}` passes the literal text
+            // `{type}` through, which is not an account type, so the guard aborted
+            // with a 500 on the first call. Writing the type into the path *and* the
+            // guard as two literals means they cannot drift apart, and it matches the
+            // four `me` doors and the four sign-out doors above.
+            //
+            // Exempt from its own guard, or the account could not reach the only
+            // route that would help it.
+            foreach ([
+                'users' => AccountType::User,
+                'workers' => AccountType::Worker,
+                'admins' => AccountType::Admin,
+                'super-admins' => AccountType::SuperAdmin,
+            ] as $segment => $type) {
+                Route::post("/{$segment}/password/change", ChangePasswordController::class)
+                    ->middleware('account.can:'.$type->value)
+                    ->withoutMiddleware(EnsurePasswordChanged::ALIAS)
+                    ->name("{$segment}.password.change");
             }
 
             // The account-management surface: a super administrator only.

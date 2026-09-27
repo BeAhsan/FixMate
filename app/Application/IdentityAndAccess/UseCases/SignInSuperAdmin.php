@@ -67,6 +67,7 @@ class SignInSuperAdmin
             // The wildcard, issued sparingly and visibly - see the class
             // docblock. This is the only place it is granted.
             abilities: AccountType::SuperAdmin->abilities(),
+            mustChangePassword: $superAdmin->mustChangePassword,
             subject: 'super_admin',
         );
     }

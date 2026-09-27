@@ -88,6 +88,12 @@ class EloquentSuperAdminRepository implements SuperAdminRepository
                 'email' => $superAdmin->email->value,
                 'password' => $superAdmin->passwordHash,
                 'status' => $superAdmin->status->value,
+                // Written because the entity carries it. Omitting it here is a bug
+                // that is invisible until something tries to clear the flag: `updateOrCreate`
+                // writes only the keys it is given, so a save() that left this out
+                // would keep the stored value whatever the domain had decided, and
+                // `must_change_password` could never be cleared.
+                'must_change_password' => $superAdmin->mustChangePassword,
             ]
         );
 
@@ -102,6 +108,7 @@ class EloquentSuperAdminRepository implements SuperAdminRepository
             email: $eloquentSuperAdmin->email,
             passwordHash: $eloquentSuperAdmin->password,
             status: $eloquentSuperAdmin->status,
+            mustChangePassword: (bool) $eloquentSuperAdmin->must_change_password,
         );
     }
 }

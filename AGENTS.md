@@ -677,6 +677,31 @@ never enter an image layer.
   `data.user` for an end user, `data.super_admin` for a super administrator.
   Reaching for `data.user` on a super administrator's response reads as a
   provisioning failure rather than a wrong path.
+- **Laravel does not substitute route parameters inside a middleware string.**
+  `->middleware('account.can:{type}')` passes the literal text `{type}` through, and
+  the guard then aborts with a 500 because it is not an account type. The
+  password-change routes are four literal doors for that reason, which also means
+  the account type in the path and the account type in the guard cannot drift apart.
+- **`must_change_password` has to be written by every repository `save()`.** Those
+  use `updateOrCreate`, which writes only the keys it is given, so a `save()` that
+  omitted the column kept the stored value whatever the domain had decided — and
+  the flag could never be cleared. Invisible until something tried to clear it.
+- **Cast a boolean column, or every strict comparison about it is wrong.** The
+  database returns `0`/`1`, and `assertFalse(0)` *fails*, because PHPUnit compares
+  with `===`. A cleared flag read as still set, in the tests and in any `=== false`
+  elsewhere. Truthiness in an `if` hides this; strictness does not.
+- **The sign-in response reports `must_change_password`; `EnsurePasswordChanged` is
+  the control.** The flag is a courtesy so a front end can route to the change
+  screen; the guard is what refuses a client that ignores it. A flag that is set and
+  never checked reads as protection on every account `fixmate:create-account` makes
+  and protects nothing.
+- **Sign-out is exempt from that guard and renewal is not.** Refusing sign-out would
+  trap somebody on a shared device in a session they cannot use, and signing out
+  revokes their own tokens — a larger reduction than the guard could produce.
+  Renewal is the opposite: a renewal token in browser storage that keeps buying
+  access tokens would defeat the whole rule by standing still. The password *reset*
+  flow is outside the group entirely and so remains an escape hatch, which is why
+  the refusal is a 403 and not a lock-out.
 - **A front end must not reword a refusal.** `describeSignInFailure` passes the
   back end's message through verbatim and rewrites only the two cases where the
   back end said nothing (`network`, `contract`). The sign-in refusal is
