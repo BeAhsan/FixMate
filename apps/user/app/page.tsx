@@ -1,24 +1,35 @@
+'use client'
+
 import { Card } from '@fixmate/ui'
-import { DashboardShell } from './dashboard-shell'
+import { ApplicationShell } from '@/lib/application'
 
 /**
- * The landing page, inside the application shell.
+ * The end user's dashboard.
  *
- * The content is deliberately plain. This route exists to prove the packaging —
- * that a Next.js application in this workspace builds to a static export, that
- * the export survives a trip through a container image, and that nginx renders it
- * with no application server behind it. The shell arrived with ticket 17 and the
- * dashboard it wraps arrives with ticket 19, and the difference the shell makes
- * is visible precisely because there is not much underneath it yet.
+ * A **client component**, and it has to be one. The shell renders the live
+ * account type and filters navigation by the token's abilities, neither of which
+ * exists at build time — so there is nothing for a server render to produce. The
+ * page is still prerendered: `next build` writes this HTML to `out/index.html`,
+ * and it becomes useful once the session has been restored in the browser.
  *
- * The `data-export-marker` attribute is what the packaging check greps for in
- * the served HTML. It is a real attribute, not a comment, because a comment would
- * not survive minification and its absence would be indistinguishable from a
- * build that silently stopped rendering.
+ * The `'use client'` is also what makes `lib/application` legal to import. That
+ * module calls `createApplication()` at module scope, and Next.js refuses to call
+ * a client-module function from a server render — it can only be rendered as a
+ * component or passed as a prop. A server component importing it fails the build
+ * with a message about collecting page data, which is a confusing way to be told
+ * "this page depends on the session".
+ *
+ * The only thing in this application that is *content* rather than configuration.
+ * The shell, the session and the sign-in flow are all imported.
+ *
+ * `data-export-marker` is what the packaging check greps for in the served HTML.
+ * A real attribute rather than a comment, because a comment would not survive
+ * minification and its absence would be indistinguishable from a build that
+ * silently stopped rendering.
  */
 export default function HomePage() {
     return (
-        <DashboardShell>
+        <ApplicationShell>
             <div className="flex flex-col gap-6">
                 <Card title="Welcome">
                     <p className="text-slate-600 dark:text-slate-300">
@@ -36,10 +47,10 @@ export default function HomePage() {
                     <h2 className="text-lg font-semibold">What arrives next</h2>
                     <ul className="flex list-disc flex-col gap-2 pl-5 text-slate-600 dark:text-slate-300">
                         <li>Dashboard data, with loading, empty and failure states.</li>
-                        <li>The other three applications, as copies of this one.</li>
+                        <li>Five images from one release, rolled back together.</li>
                     </ul>
                 </section>
             </div>
-        </DashboardShell>
+        </ApplicationShell>
     )
 }

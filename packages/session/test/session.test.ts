@@ -1,6 +1,7 @@
 import { ApiError, createApiClient, createOperations } from '@fixmate/api-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+    OPERATIONS_BY_APPLICATION,
     createAccessTokenSource,
     createSession,
     memoryRenewalTokenStore,
@@ -24,6 +25,13 @@ import type { Session, SessionOptions } from '../src'
  */
 
 const BASE_URL = 'https://api.fixmate.test'
+
+/** What `me` answers with. Declared once so the shape is exercised for real. */
+const WHO_AM_I = {
+    account_type: 'users',
+    account: { id: 1, name: 'Ada Lovelace', email: 'ada@example.test', status: 'active' },
+    abilities: ['users:*'],
+}
 
 const ACCESS_EXPIRES_AT = 1_000_000
 const RENEWAL_EXPIRES_AT = 9_000_000
@@ -84,6 +92,9 @@ describe('the session layer', () => {
                 signOut: async () => {
                     throw new Error('not stubbed; use the fetch-level tests')
                 },
+                whoAmI: async () => {
+                    throw new Error('not stubbed; use the fetch-level tests')
+                },
             },
             store,
             now: () => clock,
@@ -131,6 +142,7 @@ describe('the session layer', () => {
                 signIn: (input) => operations.signInUser(input),
                 renew: () => operations.renewSessionUser(),
                 signOut: () => operations.signOutUser(),
+                whoAmI: () => operations.currentUser(),
             },
             store,
             now: () => clock,
@@ -142,6 +154,18 @@ describe('the session layer', () => {
                 }
             },
         })
+    }
+
+    /**
+     * The recorded requests to one path.
+     *
+     * A restore now makes two calls — the renewal and then `me` — so an
+     * assertion about "the last request" is an assertion about the wrong thing.
+     * Naming the path is what keeps these tests saying what they mean as the
+     * session grows another step.
+     */
+    function requestsTo(path: string) {
+        return requests.filter((request) => request.url.includes(path))
     }
 
     function json(body: unknown, status = 200): Response {
@@ -186,6 +210,7 @@ describe('the session layer', () => {
                     throw new Error('unused')
                 },
                 signOut: async () => ({ message: 'Signed out.' }),
+                whoAmI: async () => ({ ...WHO_AM_I, abilities: [] }),
             },
         })
 
@@ -236,7 +261,10 @@ describe('the session layer', () => {
 
         await session.restore()
 
-        expect(requests.at(-1)?.token).toBe('renewal-from-storage')
+        // The renewal call specifically, and specifically the credential it
+        // carried. `me` goes out afterwards with the *access* token, so reading
+        // the last request here would have quietly stopped testing this.
+        expect(requestsTo('/session/renew')[0]?.token).toBe('renewal-from-storage')
     })
 
     it('is signed out, not broken, when there is nothing stored', async () => {
@@ -277,7 +305,8 @@ describe('the session layer', () => {
 
         expect(first).toBe(true)
         expect(second).toBe(true)
-        expect(requests).toHaveLength(1)
+        // One renewal, not one request: `me` is expected afterwards.
+        expect(requestsTo('/session/renew')).toHaveLength(1)
     })
 
     it('rotates the stored renewal token on every renewal', async () => {
@@ -454,10 +483,7 @@ describe('the session layer', () => {
 
         respond = () => json(renewed())
 
-        console.log('pending before task:', pending.length, pending.map(p => p.runAt))
         await pending.at(-1)?.task()
-        console.log('requests:', JSON.stringify(requests))
-        console.log('state:', session.state, 'token:', session.accessToken())
 
         expect(session.state).toBe('signed-in')
         expect(session.accessToken()).toBe('access-2')
@@ -486,6 +512,7 @@ describe('the session layer', () => {
                     })
                 },
                 signOut: async () => ({ message: 'Signed out.' }),
+                whoAmI: async () => ({ ...WHO_AM_I, abilities: [] }),
             },
             onError: (error) => errors.push(error),
         })
@@ -510,6 +537,7 @@ describe('the session layer', () => {
                     throw new Error('must not run')
                 },
                 signOut: async () => ({ message: 'Signed out.' }),
+                whoAmI: async () => ({ ...WHO_AM_I, abilities: [] }),
             },
         })
 
@@ -553,4 +581,101 @@ describe('the session layer', () => {
 
         expect(seen).toEqual([])
     })
+describe('knowing who the session belongs to', () => {
+    it('reads the account after a sign-in', async () => {
+        // The shell has to name the live account type and the navigation has to
+        // be filtered by ability, and neither the token string nor browser
+        // storage carries either. The back end is asked.
+        session = sessionOverRealClient()
+        respond = (url) => (url.includes('/me') ? json({ data: WHO_AM_I }) : json(signedIn()))
+
+        await session.signIn('ada@example.test', 'password123')
+
+        expect(session.account()).toEqual({
+            accountType: 'users',
+            name: 'Ada Lovelace',
+            email: 'ada@example.test',
+            abilities: ['users:*'],
+        })
+    })
+
+    it('reads the account after a restore, not only after a sign-in', async () => {
+        // A reload is the common case, and the one where nothing was typed.
+        store = {
+            kind: 'held-by-client',
+            read: () => 'renewal-1',
+            write: () => {},
+            clear: () => {},
+        }
+        session = sessionOverRealClient()
+        respond = (url) => (url.includes('/me') ? json({ data: WHO_AM_I }) : json(renewed()))
+
+        await session.restore()
+
+        expect(session.account()?.accountType).toBe('users')
+    })
+
+    it('has no account before the back end has answered', () => {
+        // Null rather than a guess. The account type is the back end's to decide,
+        // and a session layer that filled one in would be labelling itself on
+        // trust.
+        session = build()
+
+        expect(session.account()).toBeNull()
+    })
+
+    it('fails closed when the account cannot be read', async () => {
+        // Abilities empty rather than stale, so every ability-scoped section
+        // disappears instead of being offered on the strength of an answer from
+        // a session that no longer exists.
+        session = build({
+            operations: {
+                signIn: async () => ({
+                    token: 'access-1',
+                    renewal_token: 'renewal-1',
+                    access_token_expires_at: new Date(1_000_000).toISOString(),
+                    renewal_token_expires_at: new Date(9_000_000).toISOString(),
+                }),
+                renew: async () => {
+                    throw new Error('unused')
+                },
+                signOut: async () => ({ message: 'Signed out.' }),
+                whoAmI: async () => {
+                    throw new ApiError({
+                        kind: 'network',
+                        message: 'The request failed.',
+                        status: 0,
+                        code: null,
+                        fields: {},
+                        retryable: true,
+                    })
+                },
+            },
+        })
+
+        await session.signIn('ada@example.test', 'password123')
+
+        expect(session.state).toBe('signed-in')
+        expect(session.account()).toBeNull()
+    })
+
+    it('forgets the account when the session ends', async () => {
+        store = {
+            kind: 'held-by-client',
+            read: () => 'renewal-1',
+            write: () => {},
+            clear: () => {},
+        }
+        session = sessionOverRealClient()
+        respond = (url) => (url.includes('/me') ? json({ data: WHO_AM_I }) : json(renewed()))
+
+        await session.restore()
+        expect(session.account()).not.toBeNull()
+
+        respond = () => json({ message: 'Unauthenticated.' }, 401)
+        await session.restore()
+
+        expect(session.account()).toBeNull()
+    })
+})
 })

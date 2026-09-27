@@ -11,13 +11,19 @@ other.
 | `admin` | the administrator | `admins` |
 | `super-admin` | access management | `super admins` |
 
-**One of the four now exists.** `user/` is the first, and it is the reference
-the other three are copies of. The workspace was stood up first, on purpose, so
-that the first application was added to a structure already known to install,
-resolve and build. Tickets 15 to 19 fill in the rest.
+**All four exist.** `user/` is the reference the other three are copies of, and
+each is a deployable image in its own right. What differs between them is
+`lib/application.ts` — a key, an address, a navigation, and three strings of copy.
 
-The directory exists in git because of this file as well as because of
-`user/`: git cannot track an empty directory, so without something committed
+That is the whole claim of this repository's front end, and it is **enforced**,
+not merely intended: `tests/Feature/FrontEndApplicationsTest.php` fails the build
+if any application grows a `<form>`, a `fetch`, a router call, its own `<header>`,
+or a reference to another account type's operations. The files that *are* allowed
+to be byte-identical are listed by name in that test, each with a reason, and the
+same test fails if an entry on that list stops being true.
+
+The directory exists in git because of this file as well as because of the four
+applications: git cannot track an empty directory, so without something committed
 here a fresh clone would have no `apps/` at all and the `apps/*` workspace glob
 would match nothing.
 

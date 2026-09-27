@@ -18,6 +18,8 @@
  * ```
  */
 
+export { LOCAL_API_URL, resolveApiBaseUrl } from './base-url'
+
 export { createApiClient, buildQuery } from './http'
 export type { ApiClient, ApiClientOptions, HttpMethod, Query, RequestOptions, Route } from './http'
 

@@ -63,6 +63,21 @@ export interface SessionOperations {
         renewal_token_expires_at: string
     }>
     signOut(): Promise<{ message: string }>
+    /**
+     * Who the live token belongs to, and what it may do.
+     *
+     * Part of the session rather than something an application calls separately,
+     * because two things need it and neither should have to remember to: the
+     * shell needs the account type to name the live identity, and the navigation
+     * needs the abilities to decide what to offer. An application that had to ask
+     * for them itself would be one more place to forget, and forgetting means
+     * either an empty header or a navigation offering a link that will refuse.
+     */
+    whoAmI(): Promise<{
+        account_type: string
+        account: { id: number; name: string; email: string; status: string }
+        abilities: string[]
+    }>
 }
 
 export interface SessionOptions {
@@ -100,6 +115,19 @@ export interface SessionOptions {
     onError?: (error: unknown) => void
 }
 
+/**
+ * Who the live session belongs to, as the back end describes it.
+ *
+ * `abilities` is empty when the account could not be read, which hides every
+ * ability-scoped section rather than offering one that will be refused.
+ */
+export interface SessionAccount {
+    accountType: string
+    name: string
+    email: string
+    abilities: string[]
+}
+
 export interface Session {
     /** The current state, for a shell to render from. */
     readonly state: SessionState
@@ -109,6 +137,13 @@ export interface Session {
     accessToken(): string | null
     /** When the current access token stops being accepted, or null. */
     accessTokenExpiresAt(): number | null
+    /**
+     * Who the live session belongs to, or null before the back end has said.
+     *
+     * Null rather than a guess: the account type is the back end's to decide,
+     * and a session layer that filled one in would be labelling itself on trust.
+     */
+    account(): SessionAccount | null
     /**
      * Attempt to restore a session from the stored renewal token.
      *

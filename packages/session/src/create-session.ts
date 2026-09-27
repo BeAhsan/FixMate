@@ -3,6 +3,7 @@ import type { AccessTokenSource } from './access-token-source'
 import type { RenewalTokenStore } from './renewal-token-store'
 import {
     type Session,
+    type SessionAccount,
     type SessionEndReason,
     type SessionOptions,
     type SessionState,
@@ -40,6 +41,7 @@ export function createSession(options: SessionOptions): Session {
     let state: SessionState = 'unknown'
     let endedBecause: SessionEndReason | null = null
     let accessTokenExpiresAt: number | null = null
+    let account: SessionAccount | null = null
     let restoring: Promise<boolean> | null = null
     let cancelScheduledRenewal: (() => void) | null = null
     const listeners = new Set<(state: SessionState, reason: SessionEndReason | null) => void>()
@@ -87,6 +89,34 @@ export function createSession(options: SessionOptions): Session {
         )
     }
 
+    /**
+     * Ask who the session belongs to, and remember it.
+     *
+     * Done here rather than by each application because two things need it and
+     * neither should have to remember to ask: the shell has to name the live
+     * account type, and the navigation has to be filtered by ability. An
+     * application that had to do this itself would be one more place to forget,
+     * and forgetting means an empty header or a link that will be refused.
+     *
+     * A failure leaves the abilities empty rather than the previous account's,
+     * which fails closed — every ability-scoped section disappears instead of
+     * being offered on the strength of a stale answer.
+     */
+    const readAccount = async (): Promise<void> => {
+        try {
+            const answer = await operations.whoAmI()
+
+            account = {
+                accountType: answer.account_type,
+                name: answer.account.name,
+                email: answer.account.email,
+                abilities: answer.abilities,
+            }
+        } catch {
+            account = null
+        }
+    }
+
     const adopt = (renewed: {
         access_token: string
         renewal_token: string
@@ -104,8 +134,20 @@ export function createSession(options: SessionOptions): Session {
             store.write(renewed.renewal_token)
         }
 
-        publish('signed-in', null)
         scheduleRenewal(accessTokenExpiresAt)
+    }
+
+    /**
+     * A session is established: tokens held, account read, observers told.
+     *
+     * One step, one notification. Publishing before the account was read meant a
+     * subscriber could render a signed-in shell with no account type and no
+     * abilities — a header reading "Checking…" and a navigation hiding every
+     * section, on a page that was in fact perfectly signed in.
+     */
+    const establish = async (): Promise<void> => {
+        await readAccount()
+        publish('signed-in', null)
     }
 
     /**
@@ -120,6 +162,7 @@ export function createSession(options: SessionOptions): Session {
         tokens.set(null)
         accessTokenExpiresAt = null
         store.clear()
+        account = null
         publish('signed-out', reason)
     }
 
@@ -151,6 +194,7 @@ export function createSession(options: SessionOptions): Session {
             // exists to prevent.
             const renewed = await tokens.presentAs(token, () => operations.renew())
             adopt(renewed)
+            await establish()
 
             return true
         } catch (error) {
@@ -177,6 +221,7 @@ export function createSession(options: SessionOptions): Session {
         },
         accessToken: () => tokens.get(),
         accessTokenExpiresAt: () => accessTokenExpiresAt,
+        account: () => account,
 
         restore() {
             // Not started twice. Two concurrent renewals would spend the same
@@ -206,8 +251,8 @@ export function createSession(options: SessionOptions): Session {
                 store.write(result.renewal_token)
             }
 
-            publish('signed-in', null)
             scheduleRenewal(accessTokenExpiresAt)
+            await establish()
         },
 
         async signOut() {
