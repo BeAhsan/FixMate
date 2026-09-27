@@ -29,23 +29,28 @@ web server, the queue worker and the scheduler always run identical code.
 
 | Path | What it is |
 | --- | --- |
-| `Dockerfile` | 4 stages: composer → runtime → CI → production. `docker build .` defaults to the deployable image. |
+| `Dockerfile` | 4 stages: `vendor` → `runtime` → `test` → `production`. `docker build .` builds the last one, which is the deployable image. |
 | `docker/` | nginx, PHP-FPM, OPcache, supervisor and the container entrypoint. |
 | `docker-compose.yml` | Local dev. Source is bind-mounted, so PHP edits are live. |
-| `docker-compose.prod.yml` | Production. No source on disk, no bind mounts, image pulled from the registry. |
+| `docker-compose.prod.yml` | Production. No source on disk, no bind mounts, images pulled from the registry. Runs the back end and the four front ends. |
 | `Jenkinsfile` | The pipeline. |
-| `deploy/deploy.sh` | Runs **on the VPS**. Pull, migrate, swap, health check, roll back. |
-| `deploy/rollback.sh` | Manual rollback from the VPS. |
+| `deploy/deploy.sh` | Runs **on the VPS**. Pull all five images, migrate, swap, health-check each, roll back. |
+| `deploy/rollback.sh` | Manual rollback of the whole set from the VPS. |
 | `deploy/env.example` | Template for the VPS `.env`. |
 | `deploy/jenkins/` | The Jenkins controller's own image and compose file. |
 
 ## Before you start
 
 The registry namespace is already set to `ghcr.io/beahsan/fixmate/app`, matching
-the GitHub remote. Confirm it in two places if you rename anything:
+the GitHub remote. If you rename anything, change it in all three places:
 
 - `Jenkinsfile` → `IMAGE_NAME`
 - `deploy/env.example` → `APP_IMAGE`
+- `deploy/jenkins/secrets/config.example` → `IMAGE_REPO`
+
+Changing one of the three is the failure to avoid: the pipeline pushes to one
+place, the VPS pulls from another, and the deploy fails on a pull with a 403 that
+names none of them.
 
 You also need a **GitHub token with `write:packages`** scope, saved as the
 `fixmate-registry` credential in Jenkins. Generate one at
@@ -83,10 +88,10 @@ pipeline already installs with it.
 
 | Path | What it is |
 | --- | --- |
-| `apps/` | The four deployed front ends. `apps/user` exists; the other three follow. See `apps/README.md`. |
+| `apps/` | The four deployed front ends: `user`, `worker`, `admin`, `super-admin`. See `apps/README.md`. |
 | `apps/*/Dockerfile` | One per application. Each builds a static export and serves it with nginx. |
 | `docker/front-end/` | The nginx config every front-end image shares. |
-| `packages/` | Shared code the applications import: `packages/api-client` so far. |
+| `packages/` | Shared code the applications import: `api-client` (the typed client), `session` (sign-in and renewal) and `ui` (the design system). |
 | `package.json` | The workspace root. The `workspaces` globs are `apps/*` and `packages/*`. |
 
 `npm install` at the root installs every member's dependencies, hoisting what it
@@ -316,13 +321,25 @@ with parameters:
 
 - `TARGET` — `none` verifies and builds only, `staging` or `production` deploys.
 - `DEPLOY_HOST` — defaults to `192.168.139.242`.
-- `DEPLOY_USER` — `deploy`.
-- `PLATFORM` — `linux/amd64` by default. Use `linux/arm64` if the VPS is
-  Graviton or Apple silicon. **This must match the VPS**, or the image will
-  fail to start there.
+- `DEPLOY_USER` — defaults to `ahsanmanzoor`.
+- `DEPLOY_DIR` — defaults to `/opt/fixmate`. The directory on the VPS holding
+  `docker-compose.prod.yml` and `.env`.
+- `PLATFORM` — defaults to `linux/arm64`, which is right for an Apple silicon or
+  Graviton host. Use `linux/amd64` for an Intel one. **This must match the VPS**:
+  getting it wrong does not fail the build, it fails on the target with an exec
+  format error.
+- `API_URL` — the public address of the back end, for example
+  `https://api.example.com`. It is **baked into each front-end export at build
+  time**, because a front end reads nothing at run time, so it cannot be supplied
+  later. Required unless `TARGET` is `none`. Its origin has to be one of the four
+  in `config/applications.php`, or the browser refuses every request before the API
+  is even asked.
 - `HEALTH_URL` — optional public URL (e.g. `https://your-domain/up`) checked
   from outside the VPS, so a container that is healthy on localhost but
   unreachable publicly still fails the build.
+
+These are the `parameters` block's own defaults, and a test asserts this list
+still matches it — see `DeploymentMatchesThePipelineTest`.
 
 ## Rolling back
 
