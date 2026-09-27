@@ -56,6 +56,22 @@ class ApiDocumentation
     private const AUTHORISATION_MIDDLEWARE = 'account.can';
 
     /**
+     * The middleware that names the account type for a session route.
+     *
+     * It plays the same part as `account.can` — its first argument is the account
+     * type the door belongs to — so a document describing a renewal route has to
+     * be able to state that, and a check that only understood the first one would
+     * force the renewal doors to be documented as guarding nothing. That is not a
+     * smaller claim: it is a false one, and it is the claim a reader trusts when
+     * deciding who may call something.
+     *
+     * It names no ability, which is why it is a separate constant rather than a
+     * second entry in a list of equivalent middlewares: `account.can` takes
+     * `type[,ability]` and this takes only the type.
+     */
+    private const SESSION_MIDDLEWARE = 'session.can';
+
+    /**
      * The HTTP verbs a path may be documented under.
      *
      * Everything else in a `paths` object is a path-template variable — `admins.show`
@@ -345,23 +361,33 @@ class ApiDocumentation
     }
 
     /**
-     * The account type and ability a route's `account.can` middleware names.
+     * The account type and ability a route's authorisation middleware names.
+     *
+     * `account.can` is consulted first and `session.can` second, and the order
+     * only matters if a route ever carried both — which none does, and which
+     * would be a route asking for two different opinions about who may knock.
      *
      * @return array{0: string|null, 1: string|null}
      */
     private function authorisationOf(Route $route): array
     {
         foreach ($route->gatherMiddleware() as $middleware) {
-            if (! str_starts_with($middleware, self::AUTHORISATION_MIDDLEWARE.':')) {
-                continue;
+            if (str_starts_with($middleware, self::AUTHORISATION_MIDDLEWARE.':')) {
+                $arguments = explode(',', substr($middleware, strlen(self::AUTHORISATION_MIDDLEWARE) + 1));
+
+                return [
+                    $arguments[0] ?? null,
+                    $arguments[1] ?? null,
+                ];
             }
 
-            $arguments = explode(',', substr($middleware, strlen(self::AUTHORISATION_MIDDLEWARE) + 1));
-
-            return [
-                $arguments[0] ?? null,
-                $arguments[1] ?? null,
-            ];
+            if (str_starts_with($middleware, self::SESSION_MIDDLEWARE.':')) {
+                // No ability: this middleware's only argument is the account type.
+                return [
+                    substr($middleware, strlen(self::SESSION_MIDDLEWARE) + 1) ?: null,
+                    null,
+                ];
+            }
         }
 
         return [null, null];

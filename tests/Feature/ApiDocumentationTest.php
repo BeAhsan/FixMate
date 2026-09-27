@@ -317,10 +317,17 @@ class ApiDocumentationTest extends TestCase
         // cannot keep: nothing generates a client for it, so it is a route in a
         // document that answers nothing.
         $problems = $this->problemsFor(function (array $document): array {
-            $document['paths']['/api/v1/identity/users/sign-out'] = [
+            // A path that will not collide with a real one. This fixture used
+            // `/users/sign-out` with the operation id `signOutUser`, which was
+            // safe only while that endpoint did not exist — and it now does, so
+            // the fixture overwrote a real operation and the check reported a
+            // different (also correct) problem instead of the one under test. A
+            // fixture on a path nobody would ship is the version that keeps
+            // testing this as the API grows.
+            $document['paths']['/api/v1/identity/undocumented/placeholder'] = [
                 'post' => [
-                    'operationId' => 'signOutUser',
-                    'x-laravel-route' => 'users.signout',
+                    'operationId' => 'anOperationTheContractDoesNotHave',
+                    'x-laravel-route' => 'undocumented.placeholder',
                     'summary' => 'Not implemented.',
                     'responses' => ['204' => ['description' => 'No content.']],
                 ],
@@ -329,7 +336,7 @@ class ApiDocumentationTest extends TestCase
             return $document;
         });
 
-        $this->assertStringContainsString('the document describes signOutUser but no operation in the contract mentions it', $problems);
+        $this->assertStringContainsString('the document describes anOperationTheContractDoesNotHave but no operation in the contract mentions it', $problems);
     }
 
     // ---------------------------------------------------------------------
@@ -392,7 +399,26 @@ class ApiDocumentationTest extends TestCase
 
         $this->assertArrayHasKey('currentUser', $operations);
         $this->assertArrayNotHasKey('aMistypedVerbIsNotAnOperation', $operations);
-        $this->assertCount(17, $operations, 'only the seventeen real operations should be read');
+
+        // Counted from the contract rather than written as a number. A hardcoded
+        // count is a test that has to be edited every time an endpoint is added,
+        // and the edit is easy to make without thinking — which is how a count
+        // stops being an assertion about parsing and becomes a comment. Derived,
+        // it says what it means: the invented operation was not read, and every
+        // real one was.
+        //
+        // Compared as sets, not as sequences. The document and the contract are
+        // allowed to list operations in different orders — they are different
+        // files, grouped for different readers — and demanding the same order
+        // would make this a test about formatting that happens to sit next to a
+        // test about parsing.
+        $expected = array_column(ApiClientContract::load(base_path())->operations(), 'name');
+        $actual = array_keys($operations);
+
+        sort($expected);
+        sort($actual);
+
+        $this->assertSame($expected, $actual, 'only the real operations should be read');
     }
 
     public function test_two_operations_with_one_id_are_refused_rather_than_one_replacing_the_other(): void

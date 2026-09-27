@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Domain\IdentityAndAccess\ValueObjects\Ability;
 use App\Domain\IdentityAndAccess\ValueObjects\AccountStatus;
 use App\Domain\IdentityAndAccess\ValueObjects\AccountType;
 use App\Infrastructure\IdentityAndAccess\AccountTypeRegistry;
@@ -91,6 +92,25 @@ class EnsureAccountCan
 
         $token = $account->currentAccessToken();
         $abilities = $token?->abilities ?? [];
+
+        // A renewal token is refused here, before anything else is considered,
+        // and this is the rule that makes it safe to keep one in browser
+        // storage.
+        //
+        // A renewal token is a Sanctum token like any other, so `auth:sanctum`
+        // has already resolved the account and everything below would let it
+        // through on a route that named no ability. It lives in storage where
+        // injected script can read it, so unlike the access token it cannot be
+        // trusted to be worth little on its own — the restriction has to be
+        // enforced by the server, not by the client declining to use it.
+        //
+        // It is refused as a *forbidden* rather than unauthenticated because the
+        // caller does hold a working credential; it simply is not one this route
+        // accepts. The message says so plainly, because a front end holding one
+        // of these by mistake needs to be told to renew rather than to sign in.
+        if (in_array(Ability::SESSION_RENEW, $abilities, true)) {
+            throw new AuthorizationException('This token may only be used to renew a session. It cannot be used to call this endpoint.');
+        }
 
         // Ability first, where the route named one. See the class docblock.
         if ($ability !== null && ! $expected->may($abilities, $ability)) {

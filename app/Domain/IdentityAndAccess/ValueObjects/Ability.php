@@ -60,6 +60,24 @@ final class Ability
     public const ACCOUNTS_PROMOTE = 'accounts:promote';
 
     /**
+     * Mint a new access token from a renewal token, and nothing else.
+     *
+     * The one ability that is not about the business at all, and the only one
+     * ever issued to a credential that is readable by injected script. A
+     * renewal token lives in browser storage so that it can survive a reload,
+     * which means a script injection can read it — so it must be worth as
+     * little as the platform can make it. It can do exactly one thing.
+     *
+     * It is here, among the business abilities, rather than in a constant of
+     * its own because the rule that makes it safe is enforced by the same
+     * middleware that enforces the others: `EnsureAccountCan` refuses any token
+     * carrying this ability, and only the renewal route — which asks for it by
+     * name — will let one through. A separate mechanism for one ability would
+     * be a second way to be wrong about what a token may do.
+     */
+    public const SESSION_RENEW = 'session:renew';
+
+    /**
      * The abilities that belong to a super administrator and to nobody else.
      *
      * Listed here so that a test can assert the separation directly — for each

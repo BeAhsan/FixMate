@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Application\IdentityAndAccess\Exceptions\InvalidCredentials;
+use App\Domain\IdentityAndAccess\ValueObjects\Ability;
 use App\Models\Admin;
 use App\Models\SuperAdmin;
 use App\Models\User;
@@ -126,14 +127,38 @@ class SuperAdminSignInTest extends TestCase
         $this->assertEquals(['admins:*'], $adminAbilities);
         $this->assertEquals(['*'], $superAdminAbilities);
 
-        // The wildcard is not reachable by signing in anywhere else. Asserted
-        // over every token issued in this test, not just the two above, so an
-        // ability added to another door later would fail here.
+        // The wildcard is not reachable by signing in anywhere else, and it is
+        // not reachable by renewing either.
+        //
+        // Asserted over every token issued in this test rather than just the two
+        // above, so an ability added to another door later would fail here. The
+        // renewal tokens are called out separately because a super
+        // administrator's renewal token is the most valuable credential on the
+        // platform *and* the one held in browser storage where injected script
+        // can read it — it must carry `session:renew` and nothing else. A blanket
+        // "every super admin token is ['*']" would have forced exactly the
+        // opposite, so this is the assertion getting sharper rather than
+        // weaker.
         foreach (PersonalAccessToken::all() as $token) {
+            if (in_array(Ability::SESSION_RENEW, $token->abilities, true)) {
+                $this->assertEquals(
+                    [Ability::SESSION_RENEW],
+                    $token->abilities,
+                    'A renewal token may do one thing, whoever it belongs to.',
+                );
+                $this->assertNotContains(
+                    Ability::WILDCARD,
+                    $token->abilities,
+                    'A renewal token lives in browser storage and must never carry the wildcard.',
+                );
+
+                continue;
+            }
+
             if ($token->tokenable_type === SuperAdmin::class) {
-                $this->assertEquals(['*'], $token->abilities);
+                $this->assertEquals([Ability::WILDCARD], $token->abilities);
             } else {
-                $this->assertNotContains('*', $token->abilities);
+                $this->assertNotContains(Ability::WILDCARD, $token->abilities);
             }
         }
     }

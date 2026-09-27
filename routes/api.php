@@ -22,6 +22,8 @@ use App\Http\Controllers\Accounts\ShowAdminController;
 use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\Auth\AdminPasswordResetController;
 use App\Http\Controllers\Auth\CurrentAccountController;
+use App\Http\Controllers\Auth\RenewSessionController;
+use App\Http\Controllers\Auth\SignOutController;
 use App\Http\Controllers\Auth\SuperAdminLoginController;
 use App\Http\Controllers\Auth\SuperAdminPasswordResetController;
 use App\Http\Controllers\Auth\UserLoginController;
@@ -147,6 +149,37 @@ Route::prefix('v1/identity')
             Route::get('/super-admins/me', CurrentAccountController::class)
                 ->middleware('account.can:'.AccountType::SuperAdmin->value)
                 ->name('super-admins.me');
+
+            // Renew the session, and sign out of it.
+            //
+            // Four doors each, for the same reason the four `me` doors above
+            // exist: each application calls its own, and a token presented at
+            // the wrong one is refused. Renewal is the one route a renewal
+            // token may call, and `session.can` is the only middleware that
+            // will let one through - `account.can`, which every other route
+            // uses, refuses it precisely because it is a credential that lives
+            // in browser storage.
+            //
+            // Sign-out is guarded by `auth:sanctum` alone. It deliberately does
+            // not take `account.can`, because that would refuse a renewal token
+            // - and an expired access token is the normal reason for signing
+            // out, so refusing the renewal token would leave a working one in
+            // storage that signs the person straight back in. Revoking tokens
+            // can only affect the account presenting them, so there is nothing
+            // for a guard to protect on this route.
+            foreach ([
+                'users' => AccountType::User,
+                'workers' => AccountType::Worker,
+                'admins' => AccountType::Admin,
+                'super-admins' => AccountType::SuperAdmin,
+            ] as $segment => $type) {
+                Route::post("/{$segment}/session/renew", RenewSessionController::class)
+                    ->middleware('session.can:'.$type->value)
+                    ->name("{$segment}.session.renew");
+
+                Route::post("/{$segment}/sign-out", SignOutController::class)
+                    ->name("{$segment}.sign-out");
+            }
 
             // The account-management surface: a super administrator only.
             //
