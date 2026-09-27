@@ -1,0 +1,800 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "FixMate API",
+        "version": "1.0.0",
+        "summary": "The JSON API the four FixMate applications talk to.",
+        "description": "A JSON API and nothing else: no route in it returns a page.\n\nThere are four sign-in doors, one per account type, and each resolves credentials against its own store. A person may hold an account in several stores under one address, so which store a request reaches is decided by the URL and never by the address in the body.\n\nEvery route below `/api/v1/identity` and above it is described by three artifacts that must agree: this document, `contract.json` (the front ends' recorded expectation), and the back end's route table. `php artisan api-docs:check` and `php artisan api-client:check` each hold one link of that chain.",
+        "contact": {
+            "name": "FixMate"
+        },
+        "license": {
+            "name": "MIT",
+            "identifier": "MIT"
+        }
+    },
+    "servers": [
+        {
+            "url": "/",
+            "description": "The application's own origin. Every path in this document is absolute, including the /api prefix, so that it can be compared to the back end's route table without arithmetic on a base path."
+        }
+    ],
+    "tags": [
+        {
+            "name": "Customer",
+            "description": "The customer application, and the `users` credential store."
+        },
+        {
+            "name": "Worker",
+            "description": "The worker application, and the `workers` credential store."
+        },
+        {
+            "name": "Administrator",
+            "description": "The administrator application, and the `admins` credential store."
+        },
+        {
+            "name": "Super administrator",
+            "description": "The super administrator application, and the `super_admins` credential store. The only path in the platform that issues the wildcard ability."
+        },
+        {
+            "name": "Accounts",
+            "description": "The account-management surface, which is super administrators only."
+        }
+    ],
+    "paths": {
+        "/api/v1/identity/users/sign-in": {
+            "post": {
+                "operationId": "signInUser",
+                "x-laravel-route": "users.signin",
+                "tags": ["Customer"],
+                "summary": "Sign in as an end user.",
+                "description": "Resolves the credentials against the `users` store only, so it can only ever succeed for an account that exists there.\n\nAn unknown address, a wrong password and an account that cannot be used all answer with the same 422 and the same message, because telling them apart would make this endpoint a way of asking which addresses hold accounts.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/SignInRequest" },
+                            "example": { "email": "ahsan@example.test", "password": "customerpass" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The token, and the account it belongs to.",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/CustomerSignInResponse" }
+                            }
+                        }
+                    },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" },
+                    "429": { "$ref": "#/components/responses/Throttled" }
+                }
+            }
+        },
+        "/api/v1/identity/workers/sign-in": {
+            "post": {
+                "operationId": "signInWorker",
+                "x-laravel-route": "workers.signin",
+                "tags": ["Worker"],
+                "summary": "Sign in as a worker.",
+                "description": "A separate door from the customer one, backed by a separate store. The worker is returned under `worker`, not under `user`, so a worker application is never handed a key it would have to special-case.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/SignInRequest" },
+                            "example": { "email": "worker@example.test", "password": "workerpass" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The token, and the account it belongs to.",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/WorkerSignInResponse" }
+                            }
+                        }
+                    },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" },
+                    "429": { "$ref": "#/components/responses/Throttled" }
+                }
+            }
+        },
+        "/api/v1/identity/admins/sign-in": {
+            "post": {
+                "operationId": "signInAdmin",
+                "x-laravel-route": "admins.signin",
+                "tags": ["Administrator"],
+                "summary": "Sign in as an administrator.",
+                "description": "A separate door from the super administrator one, backed by a separate store. An account that can sign in here carries no account-management ability; that is the distinction between the two administrator doors, and it is enforced here rather than in the interface.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/SignInRequest" },
+                            "example": { "email": "admin@example.test", "password": "adminpass" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The token, and the account it belongs to.",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/AdministratorSignInResponse" }
+                            }
+                        }
+                    },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" },
+                    "429": { "$ref": "#/components/responses/Throttled" }
+                }
+            }
+        },
+        "/api/v1/identity/super-admins/sign-in": {
+            "post": {
+                "operationId": "signInSuperAdmin",
+                "x-laravel-route": "super-admins.signin",
+                "tags": ["Super administrator"],
+                "summary": "Sign in as a super administrator.",
+                "description": "The only path in the platform that issues the wildcard ability. The account is returned under `super_admin`.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/SignInRequest" },
+                            "example": { "email": "chief@example.test", "password": "chiefpass" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The token, and the account it belongs to.",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/SuperAdministratorSignInResponse" }
+                            }
+                        }
+                    },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" },
+                    "429": { "$ref": "#/components/responses/Throttled" }
+                }
+            }
+        },
+        "/api/v1/identity/users/forgot-password": {
+            "post": {
+                "operationId": "forgotPasswordUser",
+                "x-laravel-route": "users.forgot-password",
+                "tags": ["Customer"],
+                "summary": "Ask for a customer password reset link.",
+                "description": "Answers the same way whether or not the address holds an account, because a reset endpoint that reported an unknown address would be a way of asking which addresses do. A screen rendering the acknowledgement is showing a conditional statement and must not present it as \"we have emailed you\".\n\nThe store the address is looked for in is not a field, and must never become one: it is decided by the endpoint this request arrived at, so a client cannot ask for a link against a store that is not its own.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" },
+                            "example": { "email": "ahsan@example.test" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": { "$ref": "#/components/responses/Acknowledgement" },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" },
+                    "429": { "$ref": "#/components/responses/Throttled" }
+                }
+            }
+        },
+        "/api/v1/identity/users/reset-password": {
+            "post": {
+                "operationId": "resetPasswordUser",
+                "x-laravel-route": "users.reset-password",
+                "tags": ["Customer"],
+                "summary": "Redeem a customer reset link.",
+                "description": "The link is single use and it is checked before the password is, so a password refused under `errors.password` leaves the link usable. A link that is spent or has expired is refused under `errors.password_reset` — a different failure with a different fix, told apart here even though neither says whether an account exists.\n\nNot throttled, unlike the link request: this endpoint cannot be flooded with mail.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" },
+                            "example": {
+                                "email": "ahsan@example.test",
+                                "token": "the-token-from-the-link",
+                                "password": "a-new-password"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": { "$ref": "#/components/responses/Acknowledgement" },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" }
+                }
+            }
+        },
+        "/api/v1/identity/workers/forgot-password": {
+            "post": {
+                "operationId": "forgotPasswordWorker",
+                "x-laravel-route": "workers.forgot-password",
+                "tags": ["Worker"],
+                "summary": "Ask for a worker password reset link.",
+                "description": "The same neutral acknowledgement as the customer door, against the `workers` store. Throttled separately from sign-in, and separately from the other three stores' reset doors, so flooding one store does not lock the same address out of another.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" },
+                            "example": { "email": "worker@example.test" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": { "$ref": "#/components/responses/Acknowledgement" },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" },
+                    "429": { "$ref": "#/components/responses/Throttled" }
+                }
+            }
+        },
+        "/api/v1/identity/workers/reset-password": {
+            "post": {
+                "operationId": "resetPasswordWorker",
+                "x-laravel-route": "workers.reset-password",
+                "tags": ["Worker"],
+                "summary": "Redeem a worker reset link.",
+                "description": "A separate operation from the customer one rather than a shared one with a parameter: the store a reset changes is decided by the endpoint, and a front end that could name the store would be able to ask for a link against an account that is not its own.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" },
+                            "example": {
+                                "email": "worker@example.test",
+                                "token": "the-token-from-the-link",
+                                "password": "a-new-password"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": { "$ref": "#/components/responses/Acknowledgement" },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" }
+                }
+            }
+        },
+        "/api/v1/identity/admins/forgot-password": {
+            "post": {
+                "operationId": "forgotPasswordAdmin",
+                "x-laravel-route": "admins.forgot-password",
+                "tags": ["Administrator"],
+                "summary": "Ask for an administrator password reset link.",
+                "description": "Against the `admins` store, whichever store the address also happens to hold accounts in.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" },
+                            "example": { "email": "admin@example.test" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": { "$ref": "#/components/responses/Acknowledgement" },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" },
+                    "429": { "$ref": "#/components/responses/Throttled" }
+                }
+            }
+        },
+        "/api/v1/identity/admins/reset-password": {
+            "post": {
+                "operationId": "resetPasswordAdmin",
+                "x-laravel-route": "admins.reset-password",
+                "tags": ["Administrator"],
+                "summary": "Redeem an administrator reset link.",
+                "description": "The same two refusal fields as every other reset, against the `admins` store.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" },
+                            "example": {
+                                "email": "admin@example.test",
+                                "token": "the-token-from-the-link",
+                                "password": "a-new-password"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": { "$ref": "#/components/responses/Acknowledgement" },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" }
+                }
+            }
+        },
+        "/api/v1/identity/super-admins/forgot-password": {
+            "post": {
+                "operationId": "forgotPasswordSuperAdmin",
+                "x-laravel-route": "super-admins.forgot-password",
+                "tags": ["Super administrator"],
+                "summary": "Ask for a super administrator password reset link.",
+                "description": "Against the `super_admins` store.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ForgotPasswordRequest" },
+                            "example": { "email": "chief@example.test" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": { "$ref": "#/components/responses/Acknowledgement" },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" },
+                    "429": { "$ref": "#/components/responses/Throttled" }
+                }
+            }
+        },
+        "/api/v1/identity/super-admins/reset-password": {
+            "post": {
+                "operationId": "resetPasswordSuperAdmin",
+                "x-laravel-route": "super-admins.reset-password",
+                "tags": ["Super administrator"],
+                "summary": "Redeem a super administrator reset link.",
+                "description": "The same two refusal fields as every other reset, against the `super_admins` store.",
+                "security": [],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/ResetPasswordRequest" },
+                            "example": {
+                                "email": "chief@example.test",
+                                "token": "the-token-from-the-link",
+                                "password": "a-new-password"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": { "$ref": "#/components/responses/Acknowledgement" },
+                    "422": { "$ref": "#/components/responses/ValidationFailure" }
+                }
+            }
+        },
+        "/api/v1/identity/users/me": {
+            "get": {
+                "operationId": "currentUser",
+                "x-laravel-route": "users.me",
+                "x-required-account-type": "users",
+                "tags": ["Customer"],
+                "summary": "Ask who the customer application's token belongs to.",
+                "description": "One door per application rather than one shared route, so that \"a worker's token does not open the customer application\" is a fact about a real address. A token presented at the wrong door is refused with a 403 that names both account types, which is safe to say because the caller has already proved they hold a working token.\n\n`account_type` is in the response so a front end can notice it holds the wrong token. Without it, a mismatched token renders an empty dashboard rather than an error.\n\nWorth calling at start-up rather than trusting a token handed over from storage: a suspended account is refused here with a 403, because an access token outlives the decision that issued it.",
+                "security": [{ "bearerAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "The account the token belongs to, and the abilities on the token.",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/CurrentAccountResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthenticated" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/api/v1/identity/workers/me": {
+            "get": {
+                "operationId": "currentWorker",
+                "x-laravel-route": "workers.me",
+                "x-required-account-type": "workers",
+                "tags": ["Worker"],
+                "summary": "Ask who the worker application's token belongs to.",
+                "description": "The same response as every other door, refused for the same reasons. The account type comes back as `workers`.",
+                "security": [{ "bearerAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "The account the token belongs to, and the abilities on the token.",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/CurrentAccountResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthenticated" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/api/v1/identity/admins/me": {
+            "get": {
+                "operationId": "currentAdmin",
+                "x-laravel-route": "admins.me",
+                "x-required-account-type": "admins",
+                "tags": ["Administrator"],
+                "summary": "Ask who the administrator application's token belongs to.",
+                "description": "The same response as every other door, refused for the same reasons. The account type comes back as `admins`.",
+                "security": [{ "bearerAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "The account the token belongs to, and the abilities on the token.",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/CurrentAccountResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthenticated" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/api/v1/identity/super-admins/me": {
+            "get": {
+                "operationId": "currentSuperAdmin",
+                "x-laravel-route": "super-admins.me",
+                "x-required-account-type": "super_admins",
+                "tags": ["Super administrator"],
+                "summary": "Ask who the super administrator application's token belongs to.",
+                "description": "The same response as every other door, refused for the same reasons. The account type comes back as `super_admins`.",
+                "security": [{ "bearerAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "The account the token belongs to, and the abilities on the token.",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/CurrentAccountResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthenticated" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/api/v1/identity/admins/{admin}": {
+            "get": {
+                "operationId": "showAdmin",
+                "x-laravel-route": "admins.show",
+                "x-required-account-type": "super_admins",
+                "x-required-ability": "accounts:read",
+                "tags": ["Accounts"],
+                "summary": "Read one administrator's record.",
+                "description": "A super administrator function. The token must belong to a super administrator and carry `accounts:read`; an administrator is refused with a 403 whether or not the identifier in the path exists.\n\nThat is deliberate. A 404 for a record you may not see would make this endpoint a way of discovering which administrator accounts exist, so a caller that receives a 404 can be sure it was allowed to ask. The identifier is a positive integer, so anything else is a 404 rather than a server error.\n\nThe identifier is not a bound model, and must not become one: model binding resolves before the authorisation middleware runs, so a bound model would answer 404 for an identifier that does not exist and 403 for one that does — the same oracle, reintroduced.",
+                "security": [{ "bearerAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "admin",
+                        "in": "path",
+                        "required": true,
+                        "description": "The administrator's identifier.",
+                        "schema": { "type": "integer", "minimum": 1 },
+                        "example": 4
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The administrator's record.",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/AdminAccountResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthenticated" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "A Sanctum personal access token, sent as `Authorization: Bearer <token>`. Opaque and not a JWT: read the claims it was issued with, from the `abilities` a `me` response echoes back, rather than decoding anything."
+            }
+        },
+        "responses": {
+            "Acknowledgement": {
+                "description": "One message, and nothing else. Both halves of a password reset answer this way.",
+                "content": {
+                    "application/json": {
+                        "schema": { "$ref": "#/components/schemas/AcknowledgementResponse" }
+                    }
+                }
+            },
+            "ValidationFailure": {
+                "description": "The request was refused.\n\nOn a sign-in door this is also the answer for an unknown address, a wrong password and an account that cannot be used — all three are refused identically, under `errors.credentials`, and nothing in the response tells them apart.",
+                "content": {
+                    "application/json": {
+                        "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                        "examples": {
+                            "refusedCredentials": {
+                                "summary": "Credentials that do not resolve, in a store where they cannot.",
+                                "value": {
+                                    "message": "These credentials do not match our records.",
+                                    "errors": { "credentials": ["These credentials do not match our records."] }
+                                }
+                            },
+                            "refusedLink": {
+                                "summary": "A reset link that is spent or has expired.",
+                                "value": {
+                                    "message": "The given data was invalid.",
+                                    "errors": {
+                                        "password_reset": [
+                                            "This password reset link is no longer valid. Request a new one."
+                                        ]
+                                    }
+                                }
+                            },
+                            "refusedPassword": {
+                                "summary": "A new password that does not meet the policy. The link is still usable.",
+                                "value": {
+                                    "message": "The given data was invalid.",
+                                    "errors": { "password": ["The password field must be at least 12 characters."] }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "Unauthenticated": {
+                "description": "No usable token was presented. Carries a message and nothing else — in particular no stack trace, which a debug-mode exception would otherwise have appended to every refusal on this API.",
+                "content": {
+                    "application/json": {
+                        "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                    }
+                }
+            },
+            "Forbidden": {
+                "description": "The token is valid and the caller still may not do this.\n\nThree different situations answer here, and the message is what tells them apart: a token for another account type (which names both types, because the caller has proved they hold a working token), a token without the ability the route requires (which does not name the missing ability, because an oracle that hands out the access model one refusal at a time is the same mistake as confirming which addresses exist in a credential store), and a suspended account (which is not a signed-out state, so a front end must not send the person back to the sign-in screen).",
+                "content": {
+                    "application/json": {
+                        "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                    }
+                }
+            },
+            "NotFound": {
+                "description": "The record does not exist — answered only to a caller that was permitted to ask, so a 404 here is never a way of learning that a record exists and is merely hidden from you.",
+                "content": {
+                    "application/json": {
+                        "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                    }
+                }
+            },
+            "Throttled": {
+                "description": "Too many attempts. Each door has its own allowance, so exhausting one does not lock the same address out of the other three.\n\n`retry_after` is in seconds and matches the `Retry-After` header. This is the only refusal on the API that carries a second field: it is the one case where telling the caller when to come back is the useful answer.",
+                "headers": {
+                    "Retry-After": {
+                        "description": "Seconds to wait, matching `retry_after` in the body.",
+                        "schema": { "type": "integer", "minimum": 1 }
+                    }
+                },
+                "content": {
+                    "application/json": {
+                        "schema": { "$ref": "#/components/schemas/ThrottledResponse" }
+                    }
+                }
+            }
+        },
+        "schemas": {
+            "SignInRequest": {
+                "type": "object",
+                "required": ["email", "password"],
+                "additionalProperties": false,
+                "properties": {
+                    "email": {
+                        "type": "string",
+                        "format": "email",
+                        "maxLength": 255
+                    },
+                    "password": {
+                        "type": "string",
+                        "maxLength": 255
+                    }
+                }
+            },
+            "SignInAccount": {
+                "type": "object",
+                "required": ["id", "name", "email"],
+                "additionalProperties": false,
+                "description": "An account as the sign-in doors return it: no status, because an account that cannot be used never gets here. There is no field for a password hash, and one could not be added without a field appearing here first.",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "name": { "type": "string" },
+                    "email": { "type": "string", "format": "email" }
+                }
+            },
+            "CustomerSignInResponse": {
+                "type": "object",
+                "required": ["data"],
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "required": ["token", "user", "abilities"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "token": { "type": "string" },
+                            "user": { "$ref": "#/components/schemas/SignInAccount" },
+                            "abilities": { "$ref": "#/components/schemas/Abilities" }
+                        }
+                    }
+                }
+            },
+            "WorkerSignInResponse": {
+                "type": "object",
+                "required": ["data"],
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "required": ["token", "worker", "abilities"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "token": { "type": "string" },
+                            "worker": { "$ref": "#/components/schemas/SignInAccount" },
+                            "abilities": { "$ref": "#/components/schemas/Abilities" }
+                        }
+                    }
+                }
+            },
+            "AdministratorSignInResponse": {
+                "type": "object",
+                "required": ["data"],
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "required": ["token", "admin", "abilities"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "token": { "type": "string" },
+                            "admin": { "$ref": "#/components/schemas/SignInAccount" },
+                            "abilities": { "$ref": "#/components/schemas/Abilities" }
+                        }
+                    }
+                }
+            },
+            "SuperAdministratorSignInResponse": {
+                "type": "object",
+                "required": ["data"],
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "required": ["token", "super_admin", "abilities"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "token": { "type": "string" },
+                            "super_admin": { "$ref": "#/components/schemas/SignInAccount" },
+                            "abilities": { "$ref": "#/components/schemas/Abilities" }
+                        }
+                    }
+                }
+            },
+            "ForgotPasswordRequest": {
+                "type": "object",
+                "required": ["email"],
+                "additionalProperties": false,
+                "description": "An address and nothing else. The account type is not a field and must never become one.",
+                "properties": {
+                    "email": { "type": "string", "format": "email", "maxLength": 255 }
+                }
+            },
+            "ResetPasswordRequest": {
+                "type": "object",
+                "required": ["email", "token", "password"],
+                "additionalProperties": false,
+                "properties": {
+                    "email": { "type": "string", "format": "email", "maxLength": 255 },
+                    "token": {
+                        "type": "string",
+                        "description": "The token from the reset link. Single use, and checked before the password, so a password refused under `errors.password` leaves the link usable."
+                    },
+                    "password": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "The new password. Refused under `errors.password` when it does not meet the back end's policy."
+                    }
+                }
+            },
+            "AcknowledgementResponse": {
+                "type": "object",
+                "required": ["data"],
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "required": ["message"],
+                        "additionalProperties": false,
+                        "properties": { "message": { "type": "string" } }
+                    }
+                }
+            },
+            "Abilities": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "The token's own claim list, echoed back. Read it to decide what to offer before calling anything — but the back end re-checks it on every request, so hiding a button is a convenience and not the protection. `*` is the wildcard carried by a super administrator's token; `accounts:read`, `accounts:suspend` and `accounts:promote` are the named ones."
+            },
+            "CurrentAccountResponse": {
+                "type": "object",
+                "required": ["data"],
+                "additionalProperties": false,
+                "description": "The signed-in account, as the application that asked sees it. One shape for all four doors, unlike the sign-in responses above which nest the account under a per-type key. At sign-in each application already knows what it is; \"who am I\" is asked by a caller that may be holding the wrong token, so the answer has to be able to say that the thing answering is a customer when a worker was expected.",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "required": ["account_type", "account", "abilities"],
+                        "additionalProperties": false,
+                        "properties": {
+                            "account_type": {
+                                "type": "string",
+                                "enum": ["users", "workers", "admins", "super_admins"],
+                                "description": "Which store the account is in. Read this before anything else: it is what tells a front end it is holding somebody else's token."
+                            },
+                            "account": { "$ref": "#/components/schemas/AccountSummary" },
+                            "abilities": { "$ref": "#/components/schemas/Abilities" }
+                        }
+                    }
+                }
+            },
+            "AccountSummary": {
+                "type": "object",
+                "required": ["id", "name", "email", "status"],
+                "additionalProperties": false,
+                "properties": {
+                    "id": { "type": "integer" },
+                    "name": { "type": "string" },
+                    "email": { "type": "string", "format": "email" },
+                    "status": { "type": "string" }
+                }
+            },
+            "AdminAccountResponse": {
+                "type": "object",
+                "required": ["data"],
+                "additionalProperties": false,
+                "description": "One administrator, as the account-management surface describes it. The same four fields as the account summary, deliberately, but a separate schema: this one is what a super administrator sees when looking at *someone else*, and each account type is meant to see a different representation of the same person. Sharing one schema would make that a matter of who remembered to unset a field.",
+                "properties": {
+                    "data": { "$ref": "#/components/schemas/AccountSummary" }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "required": ["message"],
+                "additionalProperties": false,
+                "description": "The shape of every refusal on this API. There is no envelope around it and no error code, deliberately: one shape for a validation failure, an unauthenticated request, a refused request and a missing record means a client has exactly one thing to read, and a second shape would be a second thing to get right.\n\n`additionalProperties` is false because it is load-bearing. A debug-mode exception would otherwise append the file, the line and a stack trace to one of these, and the check that the key set is exactly `message` plus `errors` is what keeps it out.",
+                "properties": {
+                    "message": { "type": "string" },
+                    "errors": {
+                        "type": "object",
+                        "description": "Per-field messages, present on a 422 and absent otherwise. The keys are `credentials` on a sign-in refusal, `password_reset` for a spent or expired link, and the field's own name otherwise — the same keys the back end's feature tests assert.",
+                        "additionalProperties": { "type": "array", "items": { "type": "string" } }
+                    }
+                }
+            },
+            "ThrottledResponse": {
+                "type": "object",
+                "required": ["message", "retry_after"],
+                "additionalProperties": false,
+                "description": "The only refusal on the API that carries a second field, because this is the one case where when to come back is the useful answer.",
+                "properties": {
+                    "message": { "type": "string" },
+                    "retry_after": { "type": "integer", "minimum": 1 }
+                }
+            }
+        }
+    }
+}

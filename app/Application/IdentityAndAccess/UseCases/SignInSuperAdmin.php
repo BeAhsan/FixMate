@@ -8,6 +8,7 @@ use App\Application\IdentityAndAccess\Exceptions\AccountSuspended;
 use App\Application\IdentityAndAccess\Exceptions\InvalidCredentials;
 use App\Domain\IdentityAndAccess\Repositories\SuperAdminRepository;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
+use App\Domain\IdentityAndAccess\ValueObjects\AccountType;
 
 /**
  * Use case for super administrator sign-in.
@@ -65,7 +66,7 @@ class SignInSuperAdmin
             email: $superAdmin->email->value,
             // The wildcard, issued sparingly and visibly - see the class
             // docblock. This is the only place it is granted.
-            abilities: ['*'],
+            abilities: AccountType::SuperAdmin->abilities(),
             subject: 'super_admin',
         );
     }

@@ -8,6 +8,7 @@ use App\Application\IdentityAndAccess\Exceptions\AccountSuspended;
 use App\Application\IdentityAndAccess\Exceptions\InvalidCredentials;
 use App\Domain\IdentityAndAccess\Repositories\AdminRepository;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
+use App\Domain\IdentityAndAccess\ValueObjects\AccountType;
 
 /**
  * Use case for administrator sign-in.
@@ -67,7 +68,7 @@ class SignInAdmin
             // Administrators get their own ability and never the wildcard. An
             // administrator token that could do anything would make the
             // super_admins table decorative.
-            abilities: ['admins:*'],
+            abilities: AccountType::Admin->abilities(),
             subject: 'admin',
         );
     }

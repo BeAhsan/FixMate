@@ -92,3 +92,286 @@ describe('signing in as an end user', () => {
         expect(error.retryable).toBe(true)
     })
 })
+
+describe('recovering an account by resetting its password', () => {
+    const acknowledgement = { data: { message: 'If that address belongs to an account, a password reset link is on its way.' } }
+
+    it('posts to the generated URL for the account type and unwraps the message', async () => {
+        const { fetch, calls } = recordingFetch(acknowledgement, 202)
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.forgotPasswordWorker({ email: 'ahsan@example.test' })
+
+        expect(calls).toEqual(['https://api.fixmate.test/api/v1/identity/workers/forgot-password'])
+        expect(result).toEqual({ message: acknowledgement.data.message })
+    })
+
+    it('redeems a link at the same account type it was requested from', async () => {
+        // The two halves are separate operations rather than one with a store
+        // parameter, so a front end physically cannot ask for a link against a
+        // store that is not its own. Redeeming at the wrong one is the back end's
+        // refusal, and the message it gives is the same one a spent link gets.
+        const { fetch, calls } = recordingFetch({ data: { message: 'Your password has been changed.' } })
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.resetPasswordWorker({
+            email: 'ahsan@example.test',
+            token: 'a-token-from-the-link',
+            password: 'a-freshly-chosen-Password1!',
+        })
+
+        expect(calls).toEqual(['https://api.fixmate.test/api/v1/identity/workers/reset-password'])
+        expect(result).toEqual({ message: 'Your password has been changed.' })
+    })
+
+    it('rejects a password the back end will not accept, filed against the password', async () => {
+        const { fetch } = recordingFetch(
+            { message: 'The password field must be at least 12 characters.', errors: { password: ['The password field must be at least 12 characters.'] } },
+            422,
+        )
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations
+            .resetPasswordUser({ email: 'ahsan@example.test', token: 'a-token', password: 'short' })
+            .catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('validation')
+        expect(error.fields['password']).toEqual(['The password field must be at least 12 characters.'])
+    })
+
+    it('rejects a spent or expired link under the neutral key, with no account details', async () => {
+        const { fetch } = recordingFetch(
+            {
+                message: 'This password reset link is no longer valid. Request a new one.',
+                errors: { password_reset: ['This password reset link is no longer valid. Request a new one.'] },
+            },
+            422,
+        )
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations
+            .resetPasswordAdmin({ email: 'ahsan@example.test', token: 'spent', password: 'a-freshly-chosen-Password1!' })
+            .catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('validation')
+        expect(error.fields['password_reset']).toEqual(['This password reset link is no longer valid. Request a new one.'])
+        expect(error.fields['email']).toBeUndefined()
+    })
+})
+
+/**
+ * The authenticated operations, which are the first that carry a bearer token and
+ * the first that can be refused by the back end for a reason other than bad input.
+ */
+describe('asking who the token belongs to', () => {
+    const currentAccount = {
+        data: {
+            account_type: 'users',
+            account: { id: 7, name: 'Ahsan', email: 'ahsan@example.test', status: 'active' },
+            abilities: ['users:*'],
+        },
+    }
+
+    const recordingRequest = (body: unknown, status = 200) => {
+        const calls: { url: string; method: string; body: unknown; authorization: string | null }[] = []
+
+        const fetch = (async (url: unknown, init: RequestInit = {}) => {
+            calls.push({
+                url: String(url),
+                method: init.method ?? 'GET',
+                body: init.body,
+                authorization: new Headers(init.headers).get('Authorization'),
+            })
+
+            return reply(status, body)()
+        }) as unknown as typeof globalThis.fetch
+
+        return { fetch, calls }
+    }
+
+    it('calls the customer door, not a shared one', async () => {
+        // Four operations rather than one, so that a front end physically cannot
+        // ask "who am I" at a door that does not belong to it — which is the half
+        // of the property that is a client concern rather than a server one.
+        const { fetch, calls } = recordingRequest(currentAccount)
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.currentUser()
+
+        expect(calls[0]?.url).toBe('https://api.fixmate.test/api/v1/identity/users/me')
+        expect(result.account_type).toBe('users')
+        expect(result.abilities).toEqual(['users:*'])
+    })
+
+    it('sends a GET with no body', async () => {
+        const { fetch, calls } = recordingRequest(currentAccount)
+        const operations = createOperations(client(fetch))
+
+        await operations.currentWorker()
+
+        expect(calls[0]?.method).toBe('GET')
+        expect(calls[0]?.body).toBeUndefined()
+    })
+
+    it('sends the bearer token the client was configured with', async () => {
+        const { fetch, calls } = recordingRequest(currentAccount)
+        const operations = createOperations(
+            createApiClient({
+                baseUrl: 'https://api.fixmate.test',
+                fetch,
+                getAccessToken: () => 'plain-text-token',
+            }),
+        )
+
+        await operations.currentUser()
+
+        expect(calls[0]?.authorization).toBe('Bearer plain-text-token')
+    })
+
+    it('reports a token belonging to another account type as forbidden, with the back end message', async () => {
+        // The message names both types. A person who signed in at the wrong door is
+        // told which door to use, not that their password was wrong — so this is
+        // asserted through rather than replaced with a local string, because the
+        // wording is a decision the back end makes and a front end should show.
+        const message =
+            'This token is for end user account, not worker account. Sign in at the worker application to use this endpoint.'
+        const { fetch } = recordingRequest({ message }, 403)
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.currentWorker().catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('forbidden')
+        expect(error.message).toBe(message)
+    })
+
+    it('reports a missing or revoked token as unauthenticated', async () => {
+        const { fetch } = recordingRequest({ message: 'Unauthenticated.' }, 401)
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.currentUser().catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('unauthenticated')
+        expect(error.requiresAuthentication).toBe(true)
+    })
+
+    it('reports a suspension as forbidden rather than as an expired session', async () => {
+        // Deliberately not `unauthenticated`. The token is still valid; the account
+        // is not permitted. A front end that treated this as a signed-out state
+        // would send the person to the sign-in screen, where the same refusal
+        // would follow them, and no amount of retyping would get past it.
+        const { fetch } = recordingRequest(
+            { message: 'Your account has been suspended. Please contact an administrator to have it restored.' },
+            403,
+        )
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.currentUser().catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('forbidden')
+        expect(error.requiresAuthentication).toBe(false)
+    })
+
+    it('rejects a response that stopped carrying the account type', async () => {
+        // The field that lets a front end notice it holds the wrong token. If the
+        // back end stops sending it, that must be a contract failure here rather
+        // than an application rendering a blank identity.
+        const { fetch } = recordingRequest({
+            data: { account: currentAccount.data.account, abilities: [] },
+        })
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.currentUser().catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('contract')
+        expect(error.message).toContain('data.account_type')
+    })
+
+    it('rejects a response missing a field it promised', async () => {
+        const { fetch } = recordingRequest({
+            data: { account_type: 'users', account: { id: 7, name: 'Ahsan' }, abilities: [] },
+        })
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.currentUser().catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('contract')
+        expect(error.message).toContain('data.account')
+    })
+})
+
+describe('reading one administrator record', () => {
+    const admin = { data: { id: 4, name: 'Ada Admin', email: 'ada@example.test', status: 'active' } }
+
+    it('substitutes the identifier into the generated URL', async () => {
+        // The parameter is not written by hand anywhere. The generated function
+        // owns the URL, so a change to the route's shape cannot leave this calling
+        // a path the back end no longer serves.
+        const { fetch, calls } = (() => {
+            const seen: string[] = []
+            const fetch = (async (url: unknown) => {
+                seen.push(String(url))
+
+                return reply(200, admin)()
+            }) as unknown as typeof globalThis.fetch
+
+            return { fetch, calls: seen }
+        })()
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.showAdmin(4)
+
+        expect(calls).toEqual(['https://api.fixmate.test/api/v1/identity/admins/4'])
+        expect(result).toEqual({ id: 4, name: 'Ada Admin', email: 'ada@example.test', status: 'active' })
+    })
+
+    it('reports a missing record as not found, for a caller that is allowed to ask', async () => {
+        const { fetch } = (() => {
+            const fetch = (async () => reply(404, { message: 'That account does not exist.' })()) as unknown as typeof globalThis.fetch
+
+            return { fetch }
+        })()
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.showAdmin(999).catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('notFound')
+    })
+
+    it('reports a refusal as forbidden, and never as not found', async () => {
+        // The property that makes this endpoint safe to expose: an administrator
+        // asking for an identifier they may not see gets the same 403 whether or
+        // not that identifier exists. A 404 here would be a way of discovering
+        // which administrator accounts exist, so a caller receiving `notFound` can
+        // be sure it was allowed to ask.
+        const { fetch } = (() => {
+            const fetch = (async () =>
+                reply(403, { message: 'Your account is not permitted to perform this action.' })()) as unknown as typeof globalThis.fetch
+
+            return { fetch }
+        })()
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.showAdmin(4).catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('forbidden')
+        expect(error.kind).not.toBe('notFound')
+    })
+
+    it('never asks for a password hash, because the shape has no field for one', async () => {
+        // The back end's own feature test asserts the key set is exactly these
+        // four. Here the point is the other direction: a field the back end starts
+        // sending is ignored, so adding a column to the admins table cannot reach a
+        // front end by accident.
+        const { fetch } = (() => {
+            const fetch = (async () =>
+                reply(200, { data: { ...admin.data, password: '$2y$12$hashed' } })()) as unknown as typeof globalThis.fetch
+
+            return { fetch }
+        })()
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.showAdmin(4)
+
+        expect(result).toEqual({ id: 4, name: 'Ada Admin', email: 'ada@example.test', status: 'active' })
+    })
+})

@@ -8,6 +8,7 @@ use App\Application\IdentityAndAccess\Exceptions\AccountSuspended;
 use App\Application\IdentityAndAccess\Exceptions\InvalidCredentials;
 use App\Domain\IdentityAndAccess\Repositories\WorkerRepository;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
+use App\Domain\IdentityAndAccess\ValueObjects\AccountType;
 
 /**
  * Use case for worker sign-in.
@@ -61,7 +62,7 @@ class SignInWorker
             userId: $worker->id,
             name: $worker->name,
             email: $worker->email->value,
-            abilities: ['workers:*'], // Worker abilities differ from a customer's
+            abilities: AccountType::Worker->abilities(),
             subject: 'worker',
         );
     }

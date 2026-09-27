@@ -135,6 +135,14 @@ pipeline {
                     # api-client:check step in .github/workflows/laravel.yml.
                     docker run --rm "${CI_TEST_IMAGE}" php artisan api-client:check
 
+                    # The other drift check, and a separate one on purpose. It
+                    # asks whether the OpenAPI document still describes the API,
+                    # which the one above cannot: the contract records no
+                    # security requirement, so nothing else here would notice a
+                    # document describing a protected route as open. Mirrored by
+                    # the api-docs:check step in .github/workflows/laravel.yml.
+                    docker run --rm "${CI_TEST_IMAGE}" php artisan api-docs:check
+
                     docker run --rm "${CI_TEST_IMAGE}"
                 '''
             }

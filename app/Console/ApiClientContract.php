@@ -172,9 +172,31 @@ class ApiClientContract
         }
 
         $source = (string) file_get_contents($file);
+
+        // Scoped to *this* route's own definition block, and that scoping is the
+        // whole point. Wayfinder writes every route in a named group into one
+        // module — `users/index.ts` holds the sign-in, both reset halves, the me
+        // endpoint and anything else on the users group — so reading the first
+        // `methods:` in the file answers for whichever route was emitted first,
+        // not for the one being checked.
+        //
+        // That was not a bug while every operation in every group was a POST: the
+        // first route emitted happens to be the sign-in, so the wrong answer
+        // agreed with the right one for all twelve operations and the check
+        // passed for the wrong reason. It surfaced the moment a group got a GET,
+        // which is why it is worth recording rather than quietly narrowing.
+        $definition = $this->definitionBlock($source, $this->exportName($operation['route']));
+
+        if ($definition === null) {
+            return [[
+                $operation['name'].':',
+                sprintf('generation produced no definition for route "%s".', $operation['route']),
+            ]];
+        }
+
         $problems = [];
 
-        if (! str_contains($source, "url: '".$operation['path']."'")) {
+        if (! str_contains($definition, "'".$operation['path']."'")) {
             $problems[] = [
                 $operation['name'].':',
                 sprintf('the generated function does not carry the URL %s.', $operation['path']),
@@ -183,7 +205,7 @@ class ApiClientContract
 
         // `methods: ["post"]` for a single-verb route, `methods: ["get", "head"]`
         // for one that answers more than one.
-        preg_match('/methods:\s*\[([^\]]*)\]/', $source, $matches);
+        preg_match('/methods:\s*\[([^\]]*)\]/', $definition, $matches);
 
         $verbs = array_map(
             fn (string $verb): string => trim($verb, " \t\n\r\0\x0B\"'"),
@@ -203,6 +225,60 @@ class ApiClientContract
         }
 
         return $problems;
+    }
+
+    /**
+     * The `methods`/`url` block wayfinder emits for one named export.
+     *
+     * The block is matched as far as the `} satisfies` that terminates it rather
+     * than as far as the first `}` after the opening brace, because a route with a
+     * parameter in it puts a `{placeholder}` inside the `url` string — `admins/{admin}`
+     * — and a non-greedy brace match stops inside that placeholder and returns a
+     * block with the URL cut off mid-string. Anchoring on `satisfies` is what the
+     * generator actually emits, and a parameterised route is the common case, not
+     * the exotic one.
+     *
+     * The lookup is anchored to a non-identifier character before the export name
+     * so that asking for `me` cannot match a hypothetical `time.definition` in the
+     * same module.
+     *
+     * @return string|null Null when the module has no definition for that export.
+     */
+    private function definitionBlock(string $source, string $export): ?string
+    {
+        $matched = preg_match(
+            '/(?<![\w$])'.preg_quote($export, '/').'\.definition\s*=\s*\{(.*?)\}\s*satisfies/s',
+            $source,
+            $matches,
+        );
+
+        return $matched === 1 ? $matches[1] : null;
+    }
+
+    /**
+     * The name wayfinder exports a named route under: the last segment, in camelCase.
+     *
+     * `admins.forgot-password` is exported as `forgotPassword`, and
+     * `super-admins.me` as `me` — so the directory is the segments before the last
+     * one, and the file is that directory's index.
+     *
+     * This duplicates a rule the generator owns, and it is the piece of this
+     * class most likely to need attention: if wayfinder's transform changes, this
+     * stops finding the block and the check reports "generation produced no
+     * definition" for every affected operation. That is the intended failure
+     * direction — a loud complaint that names a route, rather than a check that
+     * quietly reads some other route's block and passes.
+     */
+    private function exportName(string $routeName): string
+    {
+        $segments = explode('.', $routeName);
+        $segment = (string) end($segments);
+
+        return (string) preg_replace_callback(
+            '/-([a-z0-9])/',
+            fn (array $match): string => strtoupper($match[1]),
+            $segment,
+        );
     }
 
     /**

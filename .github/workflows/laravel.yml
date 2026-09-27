@@ -47,5 +47,11 @@ jobs:
       # than surfacing as a failing test three files away. The same command is
       # in the Jenkins Test stage, and the suite asserts it too.
       run: php artisan api-client:check
+    - name: Check the OpenAPI document still describes the API
+      # A second drift check, and separate because it asks a different question:
+      # whether the document a reader and any OpenAPI tooling consume is still
+      # true. The one above cannot tell — the contract has no field for a
+      # security requirement. Mirrored in the Jenkins Test stage.
+      run: php artisan api-docs:check
     - name: Execute tests (Unit and Feature tests) via PHPUnit/Pest
       run: php artisan test
