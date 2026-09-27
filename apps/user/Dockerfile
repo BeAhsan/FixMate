@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# The end user application image.
+# The FixMate user application image.
 #
 # A static export served by nginx. There is no Node process at runtime, no
 # application server, and no source tree in the image - which is the whole
@@ -20,9 +20,9 @@
 # host tree built for a different platform.
 #
 # The other three applications have their own copy of this file, in their own
-# directory, and differ only in the two ARG values below. They are separate
-# images that are built, tagged, pushed, deployed and rolled back separately;
-# see apps/README.md for why they are not one image with a flag.
+# directory, and differ only in the values below. They are separate images that
+# are built, tagged, pushed, deployed and rolled back separately; see
+# apps/README.md for why they are not one image with a flag.
 
 ARG NODE_VERSION=24
 
@@ -35,9 +35,9 @@ ARG NODE_VERSION=24
 # release record already makes by treating all five versions as a set.
 #
 # NO DEFAULT, deliberately. Omitting `--build-arg` therefore arrives in the
-# build stage as an empty string, and `lib/api.ts` throws on an empty string
-# rather than falling back to the local address it uses for a host build. A
-# default here would produce an image that starts, reports healthy, and points
+# build stage as an empty string, and `resolveApiBaseUrl` throws on an empty
+# string rather than falling back to the local address it uses for a host build.
+# A default here would produce an image that starts, reports healthy, and points
 # every person who uses it at `localhost`.
 ARG NEXT_PUBLIC_API_URL
 
@@ -80,7 +80,7 @@ COPY apps/user ./apps/user
 
 # The shared packages, from source. Each package.json points `main` and `types`
 # at `./src/index.ts`, so Next.js compiles them as part of this build rather
-# than consuming a build artefact — which is why there is no build step for them
+# than consuming a build artefact - which is why there is no build step for them
 # here.
 #
 # `api-client/src` comes along with `src/generated` and is the reason the pipeline
@@ -88,7 +88,7 @@ COPY apps/user ./apps/user
 # in .dockerignore: the API image cannot generate it (it installs --no-dev, and
 # wayfinder is a dev dependency), so nothing else in this repository can either.
 #
-# A new shared package has to be added in both places — the manifest copy above
+# A new shared package has to be added in both places - the manifest copy above
 # and the source copy here. Forgetting the second fails the build with a
 # "Module not found" naming the package, which is loud; forgetting the first
 # fails `npm ci`, because the lockfile names a member whose manifest is absent.
@@ -107,7 +107,7 @@ RUN npm run build --workspace=@fixmate/user-app \
 # Assert the shared package's classes reached the compiled CSS.
 #
 # Tailwind finds the classes it generates by scanning source, and it reaches
-# `@fixmate/ui` only through the `@source` line in globals.css — a relative path
+# `@fixmate/ui` only through the `@source` line in globals.css - a relative path
 # resolved against that file. A path one level short resolves to a directory that
 # does not exist, and Tailwind ignores a missing source **in silence**: the build
 # succeeds, the shell renders, and every class in it is missing. That is not a

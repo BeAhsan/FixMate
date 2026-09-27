@@ -27,32 +27,63 @@ it is used, and the back end refuses it on every route except the renewal one.
 
 ## Using it
 
+An application supplies a *definition* and gets three components back:
+
+```ts
+// apps/user/lib/application.ts — the whole application
+export const { session, SessionProvider, ApplicationShell, SignInScreen } =
+    createApplication({
+        application: 'user',
+        applicationLabel: 'FixMate',
+        baseUrl: resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_URL),
+        sections,
+        subject: 'end user',
+    })
+```
+
+```tsx
+// apps/user/app/page.tsx
+<ApplicationShell>
+    <Card title="Welcome">…</Card>
+</ApplicationShell>
+```
+
+`createApplication` builds the client, binds the four operations this key allows,
+creates the session, and returns the components. An application names **no
+operation, no account type, and no URL** — which is what makes "a front end
+physically cannot reach another application's door" true rather than a convention.
+`tests/Feature/FrontEndApplicationsTest.php` enforces it across the repository.
+
+The React layer is **Next-aware on purpose**. The sign-in flow has to redirect, and
+that needs `useRouter` and `useSearchParams`; leaving them out would mean each of
+the four applications re-implementing the redirect, which is the duplication this
+package exists to prevent. It also means the session package is Next-specific,
+which is a real cost and the right trade for four identical Next applications.
+
+## `createSession` on its own
+
+`createApplication` is a convenience over three pieces that can be used directly:
+
 ```ts
 const tokens = createAccessTokenSource()
 const client = createApiClient({ baseUrl, getAccessToken: tokens.get })
-const api = createOperations(client)
 
-export const session = createSession({
+const session = createSession({
     tokens,
     store: webStorageRenewalTokenStore('fixmate.user.renewal'),
-    operations: {
-        signIn: (input) => api.signInUser(input),
-        renew: () => api.renewSessionUser(),
-        signOut: () => api.signOutUser(),
-    },
+    operations: { signIn, renew, signOut, whoAmI },
 })
 ```
 
-Three things are passed in rather than decided here, and each is deliberate:
-
-- **`tokens`** is required, not created internally, because the client is built
-  first and has to read it. The alternatives are a closure over a `session`
+- **`tokens`** is required rather than created internally, because the client is
+  built first and has to read it. The alternatives are a closure over a `session`
   variable that does not exist yet, or a setter on the client — both spread the
   token across two objects. See `createAccessTokenSource`.
-- **`operations`** are the three calls for *one* account type, passed by the
-  application. There is no account-type parameter here to get wrong: an
-  application physically cannot reach another application's door, and the back
-  end refuses it if it tries.
+- **`whoAmI`** is part of the operations because two things need the account and
+  neither should have to remember to ask: the shell names the live account type,
+  and the navigation is filtered by ability. A failure leaves the abilities
+  **empty**, which hides every ability-scoped section rather than offering one
+  that will be refused.
 - **`store`** is the renewal-token arrangement, and the seam the whole design
   turns on.
 

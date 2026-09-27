@@ -293,12 +293,47 @@ never enter an image layer.
   with the `api` middleware group under Laravel's default `api` prefix — still
   not versioned. The spec wants a versioned prefix, but that decision belongs
   to whichever ticket adds the first real route group, not to this one.
-- **There is one front-end application: `apps/user`.** There is a root
-  `package.json` (npm workspaces: `apps/*`, `packages/*`), one shared package
-  `packages/api-client`, and one application. The other three arrive with
-  tickets 15 to 19 and populate `apps/`. Still no `resources/`, no
-  `public/build`, no Vite — and **still do not add a front-end build step to
-  the API image**, which builds one image that serves three roles.
+- **All four applications exist and each is twenty lines of configuration.**
+  `apps/<name>/lib/application.ts` is the application: an `application` key, an
+  address, a navigation and some copy. Everything else is imported. This is
+  enforced by `tests/Feature/FrontEndApplicationsTest.php`, which fails if any
+  application grows a `<form>`, a `fetch`, a router call, its own `<header>`, or a
+  reference to another account type's operations.
+- **The application key, not the account type, is what an application declares.**
+  `OPERATIONS_BY_APPLICATION` in `@fixmate/session` turns `application: 'user'`
+  into four operations bound to the `users` store. An application has no way to
+  name another application's door, so the only thing that could stop it is the
+  back end's `account.can` — and that is a control, not a convention.
+- **Two Next.js constraints shape the file layout, and both fail confusingly.**
+  `createApplication()` is called at module scope in a `'use client'` module, and
+  Next refuses to *call* a client function during a server render ("Attempted to
+  call createApplication() from the server"). So the dashboard and the sign-in
+  page are client components, and the root layout — which must stay a server
+  component because it exports `metadata` — renders `app/providers.tsx`, a thin
+  client boundary. The server graph imports a *component*, never the module that
+  does the calling.
+- **A duplication rule lives in exactly one place.** It was briefly in the
+  per-application vitest file as well, and it failed there for a good reason: the
+  assertion matched the *docblock* of the file it was checking, because that
+  docblock names the constructs the rule forbids while explaining it contains
+  none. `FrontEndApplicationsTest` is authoritative; it is repository-wide and
+  runs in both CI systems. A fingerprint test must strip comments.
+- **`apps/<name>/test/static-export.test.ts` is byte-identical in all four** and
+  is on the allowed-identical list with a reason. So are `app/providers.tsx` and
+  `app/sign-in/page.tsx`, which are pure delegation and contain no logic. The
+  test also fails if an entry on that list *stops* being identical — a list that
+  quietly excuses whatever is present stops meaning anything.
+- **Verify a mutation landed before concluding a guard is broken.** A regression
+  check here "passed" because the edit had not applied, and the natural next step
+  was to start rewriting a test that was working. `grep -c` the mutation first.
+- **The four front ends are verified together, not one at a time.** Four images
+  built, four containers healthy, each serving its own `data-export-marker`. A
+  4×4 sign-in matrix returns 200 only on the diagonal with every request carrying
+  its own door's `Origin` — which proves both the store isolation and that the
+  allowed-origins list names all four. And one shared shell renders three
+  different navigations for three ability sets: a super administrator sees
+  everything, an administrator loses the `accounts:read` section, a customer has
+  none of it.
 - **`apps/user` builds to a static export, and its image has no Node in it.**
   `next.config.ts` sets `output: 'export'`, so `next build` writes `out/` and
   `apps/user/Dockerfile` copies that into an nginx image. The build context is
