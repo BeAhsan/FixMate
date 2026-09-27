@@ -10,6 +10,7 @@
     "scripts": {
         "api-client:generate": "php artisan api-client:generate",
         "api-client:check": "php artisan api-client:check",
+        "build": "npm run api-client:generate && npm run build --workspaces",
         "typecheck": "npm run typecheck --workspaces --if-present",
         "test": "npm run test --workspaces --if-present"
     },
