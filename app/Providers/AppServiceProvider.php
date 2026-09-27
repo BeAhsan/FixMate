@@ -7,6 +7,7 @@ use App\Domain\IdentityAndAccess\Repositories\EndUserRepository;
 use App\Domain\IdentityAndAccess\Repositories\SuperAdminRepository;
 use App\Domain\IdentityAndAccess\Repositories\WorkerRepository;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
+use App\Http\Errors\ErrorEnvelope;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentAdminRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentEndUserRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentSuperAdminRepository;
@@ -188,15 +189,31 @@ class AppServiceProvider extends ServiceProvider
      * rather than fixed because the reset endpoints have their own version, and
      * being told to wait after mistyping a password and being told to wait
      * after asking for six reset emails are different situations.
+     *
+     * It is written in the error envelope by hand, and that is the one place on
+     * the platform that has to be. Everything else reaches the envelope through
+     * the exception handler's `respond` hook, which only ever sees responses that
+     * came from rendering an exception - and a throttle is a response the limiter
+     * composes on a perfectly successful code path, with no exception anywhere in
+     * it. Building the envelope here rather than returning a two-key body is the
+     * difference between this endpoint being covered by the platform's one error
+     * shape and being the one place a client needs a second handler for.
+     *
+     * The wait moves into `details` rather than sitting at the top level beside
+     * `message`, because the envelope reserves the top level for the four keys
+     * that are always there. A client reading `details.retry_after` reads a fact;
+     * a client reading a top-level `retry_after` was reading a key that only some
+     * errors carry, which is the thing the envelope exists to remove.
      */
     private function throttledResponse(Request $request, array $headers, string $message): JsonResponse
     {
-        $seconds = (int) ($headers['Retry-After'] ?? 0);
-
-        return response()->json([
-            'message' => $message,
-            'retry_after' => $seconds,
-        ], 429, $headers);
+        return ErrorEnvelope::response(
+            code: 'too_many_requests',
+            message: $message,
+            status: 429,
+            details: ['retry_after' => (int) ($headers['Retry-After'] ?? 0)],
+            headers: $headers,
+        );
     }
 
     /**

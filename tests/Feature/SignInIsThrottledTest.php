@@ -175,9 +175,13 @@ class SignInIsThrottledTest extends TestCase
         // in debug and a bare string otherwise, so it is rendered explicitly.
         $body = $response->json();
 
-        $this->assertArrayHasKey('retry_after', $body, 'the response must state when to retry');
-        $this->assertIsInt($body['retry_after']);
-        $this->assertGreaterThan(0, $body['retry_after']);
+        // Under `details` rather than beside `message`, because the envelope
+        // reserves the top level for the four keys every error has. A client
+        // reading `details.retry_after` is reading a fact; one reading a
+        // top-level `retry_after` was reading a key that only some errors carry.
+        $this->assertArrayHasKey('retry_after', $body['details'], 'the response must state when to retry');
+        $this->assertIsInt($body['details']['retry_after']);
+        $this->assertGreaterThan(0, $body['details']['retry_after']);
 
         $this->assertMatchesRegularExpression(
             '/wait/i',
@@ -188,7 +192,7 @@ class SignInIsThrottledTest extends TestCase
         // The stated wait and the actual hold must agree, or the message is a lie
         // the person acts on.
         $this->assertSame(
-            (string) $body['retry_after'],
+            (string) $body['details']['retry_after'],
             (string) $response->headers->get('Retry-After'),
             'the body and the Retry-After header must state the same wait'
         );
@@ -203,10 +207,13 @@ class SignInIsThrottledTest extends TestCase
 
         $body = $this->failedUserAttempt()->json();
 
-        // Every other refusal on this API is a clean, declared shape. A throttle
-        // that leaks file paths and a call stack is a different contract by
-        // accident, and an attacker gets a map of the deployment from it.
-        $this->assertSame(['message', 'retry_after'], array_keys($body));
+        // Every other refusal on this API is a clean, declared shape, and this is
+        // the one error the platform does not route through the exception
+        // handler, so it has to be written into the envelope by hand. That makes
+        // it the most likely place for a shape to drift: assert the keys are
+        // exactly the envelope's, and not merely that the three that used to be
+        // there still are.
+        $this->assertSame(['message', 'code', 'errors', 'details'], array_keys($body));
         $this->assertArrayNotHasKey('trace', $body);
         $this->assertArrayNotHasKey('file', $body);
         $this->assertArrayNotHasKey('line', $body);

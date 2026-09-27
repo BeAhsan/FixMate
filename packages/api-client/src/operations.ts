@@ -12,6 +12,13 @@ import {
     forgotPassword as forgotPasswordSuperAdmin,
     resetPassword as resetPasswordSuperAdmin,
 } from './generated/routes/super-admins'
+import { me as currentUser } from './generated/routes/users'
+import { me as currentWorker } from './generated/routes/workers'
+import { me as currentAdmin, record as adminRecord } from './generated/routes/admins'
+import { me as currentSuperAdmin } from './generated/routes/super-admins'
+// Imported from the nested directory rather than off the `super-admins` barrel,
+// so the import names the route the operation was generated from.
+import { record as anyAdminRecord } from './generated/routes/super-admins/admins'
 import { array, number, object, string, type Schema } from './schema'
 import type { ApiClient, Route } from './http'
 
@@ -23,6 +30,12 @@ import type { ApiClient, Route } from './http'
  * cannot be wrong. The shapes are written here, because wayfinder does not know
  * them: it reads routes, not bodies, and generates nothing for a request or a
  * response. That split is the whole contract between the two sides.
+ *
+ * Two of the operations below bind their route as a *function* of an identifier
+ * rather than as a fixed route, because they are the only ones whose URL is not
+ * fully known when the module loads. Building the URL once and reusing it would
+ * mean one administrator's identifier baked into a module-level constant, which
+ * is a bug that only shows up for the second record a person opens.
  *
  * The shape declared below is the same one asserted by the back end's own HTTP
  * feature tests (tests/Feature/UserSignInTest.php). If the two sides disagree,
@@ -80,6 +93,52 @@ export interface ResetPasswordInput {
 /** What either half of a reset answers with. */
 export interface AcknowledgementResult {
     message: string
+}
+
+/**
+ * One account as a "who am I" answer describes it.
+ *
+ * The back end names the account type in the body and calls the field `account`
+ * rather than naming it after the store, because the caller is the one asking
+ * and the answer has to be able to say that the thing answering is a customer
+ * when a worker was expected. That is how an application notices it has been
+ * handed the wrong token rather than rendering an empty screen — and it is
+ * exactly what a shared `me` route cannot avoid, since the account type is
+ * carried in the body rather than chosen by the URL.
+ */
+export interface CurrentAccountResult {
+    account_type: string
+    account: {
+        id: number
+        name: string
+        email: string
+        status: string
+    }
+    /**
+     * The token's own claim list, not a fresh decision. A front end may use it to
+     * hide navigation, and it cannot be used to widen anything: the endpoints the
+     * navigation leads to are refused by the back end on the same list.
+     */
+    abilities: string[]
+}
+
+/**
+ * One account as a reader who is not that account may see it.
+ *
+ * Flat, and with no `abilities` key at all. The back end leaves the list out
+ * because abilities in this platform describe the token that asked rather than
+ * the record being read, and a client that rendered the target's abilities would
+ * be showing one person's authority in another person's window. The shape here
+ * does not accept an extra `abilities` field either, so a future back end that
+ * started sending one would fail this package's tests rather than quietly
+ * offering links the caller cannot follow.
+ */
+export interface AccountSummaryResult {
+    account_type: string
+    id: number
+    name: string
+    email: string
+    status: string
 }
 
 const signInRequest: Schema<SignInInput> = object({
@@ -194,6 +253,41 @@ const acknowledgementResponse: Schema<{ data: AcknowledgementResult }> = object(
     }),
 })
 
+/**
+ * The "who am I" answer, which is the same shape for all four account types.
+ *
+ * One shape rather than four, because that is the point of the endpoint: an
+ * application that already knows what it is still gets told, and the four
+ * applications share one type rather than each declaring a near-identical copy
+ * that a change to the back end's answer would have to be applied to four times.
+ */
+const currentAccountResponse: Schema<{ data: CurrentAccountResult }> = object({
+    data: object({
+        account_type: string(),
+        account: object({
+            id: number(),
+            name: string(),
+            email: string(),
+            status: string(),
+        }),
+        abilities: array(string()),
+    }),
+})
+
+/**
+ * Another account's record. Absent `abilities` on purpose — see
+ * `AccountSummaryResult`.
+ */
+const accountSummaryResponse: Schema<{ data: AccountSummaryResult }> = object({
+    data: object({
+        account_type: string(),
+        id: number(),
+        name: string(),
+        email: string(),
+        status: string(),
+    }),
+})
+
 const definitions = {
     signInUser: {
         // Calling the generated function yields its URL and verb. The URL is
@@ -256,6 +350,30 @@ const definitions = {
         route: resetPasswordSuperAdmin() satisfies Route,
         request: resetPasswordRequest,
         response: acknowledgementResponse,
+    },
+    currentUser: {
+        route: currentUser() satisfies Route,
+        response: currentAccountResponse,
+    },
+    currentWorker: {
+        route: currentWorker() satisfies Route,
+        response: currentAccountResponse,
+    },
+    currentAdmin: {
+        route: currentAdmin() satisfies Route,
+        response: currentAccountResponse,
+    },
+    currentSuperAdmin: {
+        route: currentSuperAdmin() satisfies Route,
+        response: currentAccountResponse,
+    },
+    adminRecord: {
+        route: (admin: number) => adminRecord(admin) satisfies Route,
+        response: accountSummaryResponse,
+    },
+    anyAdminRecord: {
+        route: (admin: number) => anyAdminRecord(admin) satisfies Route,
+        response: accountSummaryResponse,
     },
 } as const
 
@@ -341,6 +459,56 @@ export interface Operations {
 
     /** Redeem a super administrator reset link. */
     resetPasswordSuperAdmin(input: ResetPasswordInput): Promise<AcknowledgementResult>
+
+    /**
+     * Who the customer application's token belongs to.
+     *
+     * Rejects with a `forbidden` ApiError whose `code` is `wrong_account_type` if
+     * the token in hand is not a customer's — which is the answer a person gets
+     * when the wrong application has been given the wrong token, and is a
+     * different problem from a missing ability. `currentUser`, `currentWorker`,
+     * `currentAdmin` and `currentSuperAdmin` are four operations rather than one
+     * with a parameter, so a front end cannot name the account type it would like
+     * to be: the back end's answer is decided by the URL it called.
+     */
+    currentUser(): Promise<CurrentAccountResult>
+
+    /** Who the worker application's token belongs to. */
+    currentWorker(): Promise<CurrentAccountResult>
+
+    /** Who the administrator application's token belongs to. */
+    currentAdmin(): Promise<CurrentAccountResult>
+
+    /**
+     * Who the super administrator application's token belongs to.
+     *
+     * The only account type whose abilities are the wildcard, and therefore the
+     * only one these operations can succeed for with a token issued by any other
+     * door.
+     */
+    currentSuperAdmin(): Promise<CurrentAccountResult>
+
+    /**
+     * Read one administrator's record from inside the administrator application.
+     *
+     * The back end will return this for the caller's own record and refuses
+     * everything else with a `forbidden` ApiError whose `code` is
+     * `not_the_record_owner`. That refusal is deliberately identical for a record
+     * that belongs to somebody else and one that does not exist, so a caller
+     * cannot use this operation to find out which identifiers are real.
+     */
+    adminRecord(admin: number): Promise<AccountSummaryResult>
+
+    /**
+     * Read one administrator's record across the store boundary.
+     *
+     * Reached only by a token holding the back end's `accounts:read` ability,
+     * which no account type below super administrator holds. An administrator
+     * calling this gets the same `not_the_record_owner` refusal as calling
+     * `adminRecord` for a stranger's identifier, so the ability is not something a
+     * front end can work around by choosing the other operation.
+     */
+    anyAdminRecord(admin: number): Promise<AccountSummaryResult>
 }
 
 /**
@@ -444,7 +612,57 @@ export function createOperations(client: ApiClient): Operations {
 
             return data
         },
+        async currentUser() {
+            const { data } = await client.request(definitions.currentUser.route, {
+                response: definitions.currentUser.response,
+            })
+
+            return data
+        },
+        async currentWorker() {
+            const { data } = await client.request(definitions.currentWorker.route, {
+                response: definitions.currentWorker.response,
+            })
+
+            return data
+        },
+        async currentAdmin() {
+            const { data } = await client.request(definitions.currentAdmin.route, {
+                response: definitions.currentAdmin.response,
+            })
+
+            return data
+        },
+        async currentSuperAdmin() {
+            const { data } = await client.request(definitions.currentSuperAdmin.route, {
+                response: definitions.currentSuperAdmin.response,
+            })
+
+            return data
+        },
+        async adminRecord(admin) {
+            const { data } = await client.request(definitions.adminRecord.route(admin), {
+                response: definitions.adminRecord.response,
+            })
+
+            return data
+        },
+        async anyAdminRecord(admin) {
+            const { data } = await client.request(definitions.anyAdminRecord.route(admin), {
+                response: definitions.anyAdminRecord.response,
+            })
+
+            return data
+        },
     }
 }
 
-export { signInRequest, signInResponse, workerSignInResponse, forgotPasswordRequest, resetPasswordRequest }
+export {
+    signInRequest,
+    signInResponse,
+    workerSignInResponse,
+    forgotPasswordRequest,
+    resetPasswordRequest,
+    currentAccountResponse,
+    accountSummaryResponse,
+}

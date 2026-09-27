@@ -89,7 +89,7 @@ class PasswordResetIsThrottledTest extends TestCase
 
         $throttled->assertStatus(429);
         $this->assertNotEmpty(
-            $throttled->json('retry_after'),
+            $throttled->json('details.retry_after'),
             'A throttled reset request must say when it can be tried again.',
         );
         $this->assertStringContainsString(

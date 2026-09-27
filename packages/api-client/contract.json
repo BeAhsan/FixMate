@@ -83,6 +83,42 @@
             "route": "super-admins.reset-password",
             "method": "post",
             "path": "/api/v1/identity/super-admins/reset-password"
+        },
+        {
+            "name": "currentUser",
+            "route": "users.me",
+            "method": "get",
+            "path": "/api/v1/identity/users/me"
+        },
+        {
+            "name": "currentWorker",
+            "route": "workers.me",
+            "method": "get",
+            "path": "/api/v1/identity/workers/me"
+        },
+        {
+            "name": "currentAdmin",
+            "route": "admins.me",
+            "method": "get",
+            "path": "/api/v1/identity/admins/me"
+        },
+        {
+            "name": "currentSuperAdmin",
+            "route": "super-admins.me",
+            "method": "get",
+            "path": "/api/v1/identity/super-admins/me"
+        },
+        {
+            "name": "adminRecord",
+            "route": "admins.record",
+            "method": "get",
+            "path": "/api/v1/identity/admins/{admin}"
+        },
+        {
+            "name": "anyAdminRecord",
+            "route": "super-admins.admins.record",
+            "method": "get",
+            "path": "/api/v1/identity/super-admins/admins/{admin}"
         }
     ]
 }

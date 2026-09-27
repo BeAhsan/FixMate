@@ -29,7 +29,9 @@ export type { Schema } from './schema'
 
 export { createOperations } from './operations'
 export type {
+    AccountSummaryResult,
     AcknowledgementResult,
+    CurrentAccountResult,
     ForgotPasswordInput,
     OperationName,
     Operations,

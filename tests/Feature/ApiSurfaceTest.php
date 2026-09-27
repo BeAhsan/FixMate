@@ -30,9 +30,13 @@ class ApiSurfaceTest extends TestCase
 
     /**
      * Every path answers in the API's format, including the ones that do not
-     * exist, so a client never has to handle an HTML error page. The body
-     * itself is not asserted: the error envelope is a later decision, and
-     * pinning its shape here would make this test break when it is replaced.
+     * exist, so a client never has to handle an HTML error page.
+     *
+     * Only the content type is asserted here. The *body* is not, because the body
+     * of every error on the platform is one declared shape and that shape is
+     * asserted once, over every route that can produce one, in
+     * AbilityScopedAuthorisationTest. Repeating the key list per status here would
+     * be a second place to update and would not test anything the other does not.
      */
     public function test_an_unknown_path_is_refused_as_json(): void
     {

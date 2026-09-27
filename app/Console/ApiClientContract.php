@@ -157,6 +157,21 @@ class ApiClientContract
      * wayfinder's template that quietly dropped the url, say, is caught here and
      * not in a browser.
      *
+     * The block read is the one belonging to *this* operation, found by the URL
+     * the contract recorded. Scanning the file for the first `methods:` it
+     * contains would be shorter and wrong: wayfinder writes every route for a
+     * store into one module, so the first block belongs to whichever route
+     * happened to be generated first, and the check would silently be verifying
+     * that one route over and over — which is exactly what it did for as long as
+     * every operation in a store shared one verb. A check that cannot fail is not
+     * a check.
+     *
+     * Addressing the block by its URL rather than by the name the generator gave
+     * the function is the same reason: the export name is derived from the route
+     * name by the generator's own kebab-to-camel rule, and reimplementing that
+     * rule here would be a second copy of it, free to drift and free to disagree.
+     * The URL is what the contract independently knows.
+     *
      * @param  array{name: string, route: string, method: string, path: string}  $operation
      * @return array<int, array{0: string, 1: string}>
      */
@@ -171,19 +186,18 @@ class ApiClientContract
             ]];
         }
 
-        $source = (string) file_get_contents($file);
-        $problems = [];
+        $definition = $this->definitionFor((string) file_get_contents($file), $operation['path']);
 
-        if (! str_contains($source, "url: '".$operation['path']."'")) {
-            $problems[] = [
+        if ($definition === null) {
+            return [[
                 $operation['name'].':',
                 sprintf('the generated function does not carry the URL %s.', $operation['path']),
-            ];
+            ]];
         }
 
         // `methods: ["post"]` for a single-verb route, `methods: ["get", "head"]`
         // for one that answers more than one.
-        preg_match('/methods:\s*\[([^\]]*)\]/', $source, $matches);
+        preg_match('/methods:\s*\[([^\]]*)\]/', $definition, $matches);
 
         $verbs = array_map(
             fn (string $verb): string => trim($verb, " \t\n\r\0\x0B\"'"),
@@ -192,17 +206,38 @@ class ApiClientContract
         $verbs = array_values(array_filter($verbs));
 
         if (! in_array($operation['method'], $verbs, true)) {
-            $problems[] = [
+            return [[
                 $operation['name'].':',
                 sprintf(
                     'the generated function answers %s, the contract says %s.',
                     $verbs === [] ? 'nothing' : implode('/', $verbs),
                     $operation['method'],
                 ),
-            ];
+            ]];
         }
 
-        return $problems;
+        return [];
+    }
+
+    /**
+     * The `x.definition = { … } satisfies …` block whose URL is this one, or null
+     * when the generator emitted no block for it.
+     *
+     * The definition rather than the `@route` comment above it because that is
+     * the value the generated URL is actually built from — the comment is a copy
+     * of it, and a copy is exactly the thing that can drift.
+     */
+    private function definitionFor(string $source, string $path): ?string
+    {
+        preg_match_all('/\.definition\s*=\s*\{(.*?)\}\s*satisfies/s', $source, $blocks);
+
+        foreach ($blocks[1] as $block) {
+            if (str_contains($block, "url: '".$path."'")) {
+                return $block;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -16,6 +16,7 @@
 |
 */
 
+use App\Http\Controllers\AdministratorRecordController;
 use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\Auth\AdminPasswordResetController;
 use App\Http\Controllers\Auth\SuperAdminLoginController;
@@ -24,6 +25,7 @@ use App\Http\Controllers\Auth\UserLoginController;
 use App\Http\Controllers\Auth\UserPasswordResetController;
 use App\Http\Controllers\Auth\WorkerLoginController;
 use App\Http\Controllers\Auth\WorkerPasswordResetController;
+use App\Http\Controllers\CurrentAccountController;
 use App\Providers\AppServiceProvider;
 
 // Identity and Access context routes
@@ -101,4 +103,74 @@ Route::prefix('v1/identity')
 
         Route::post('/super-admins/reset-password', [SuperAdminPasswordResetController::class, 'complete'])
             ->name('super-admins.reset-password');
+
+        // Who am I, one route per application.
+        //
+        // Four routes rather than one shared route, and the repetition is the
+        // design: the store an endpoint belongs to is the thing that decides
+        // which account type may call it, and a single route could only discover
+        // that from the token, which would mean the caller naming the
+        // application they believe they are in. A route per application makes the
+        // application part of the URL — the administrator application calls the
+        // administrators' URL — so the refusal cannot be talked round by a client
+        // that has been handed the wrong token.
+        //
+        // `auth:sanctum` is who you are and `authorised` is what you may do, and
+        // both are named on every route rather than applied to a group: the
+        // ability differs per application, and a group could only express the one
+        // they all share, which is none. Order matters and is the declaration
+        // order: an unauthenticated request is answered before the store is
+        // looked at, so there is nothing to compare and nothing to disclose.
+        //
+        // The super administrator route requires the wildcard its token carries,
+        // and requires nothing else. That is what makes it the most powerful
+        // account type in the platform rather than the one with the most
+        // abilities listed on a page: the ability list for it is a single name,
+        // and any route that names an ability it does not hold is unreachable.
+        Route::get('/users/me', CurrentAccountController::class)
+            ->middleware(['auth:sanctum', 'authorised:store=users,ability=users:*'])
+            ->name('users.me');
+
+        Route::get('/workers/me', CurrentAccountController::class)
+            ->middleware(['auth:sanctum', 'authorised:store=workers,ability=workers:*'])
+            ->name('workers.me');
+
+        Route::get('/admins/me', CurrentAccountController::class)
+            ->middleware(['auth:sanctum', 'authorised:store=admins,ability=admins:*'])
+            ->name('admins.me');
+
+        Route::get('/super-admins/me', CurrentAccountController::class)
+            ->middleware(['auth:sanctum', 'authorised:store=super_admins,ability=*'])
+            ->name('super-admins.me');
+
+        // Reading another record by identifier, twice over.
+        //
+        // The administrator application's own route, where the only record a
+        // token may read is its owner's. The identifier is in the URL because a
+        // person navigating their own application has one, and because the
+        // endpoint that *cannot* be navigated and can only be called directly is
+        // the one worth having: a nonexistent id and another administrator's id
+        // are answered identically, so the route cannot be walked to discover
+        // which identifiers exist.
+        //
+        // `whereNumber` keeps zero and the negatives out, because `UserId`
+        // refuses them and they are not identifiers anybody holds. It is a
+        // constraint on what a caller may say rather than a rule about who they
+        // are, so it discloses nothing.
+        Route::get('/admins/{admin}', AdministratorRecordController::class)
+            ->whereNumber('admin')
+            ->middleware(['auth:sanctum', 'authorised:store=admins,ability=admins:*'])
+            ->name('admins.record');
+
+        // The same read, reached across the store boundary, and guarded by the
+        // ability that crosses it. Two routes rather than one with a conditional
+        // because the two are different facts about the caller: an administrator
+        // is entitled to its own record as a matter of course, and to anybody
+        // else's only by holding `accounts:read`. One route would have to decide
+        // between those answers from a parameter, and a parameter is something the
+        // caller chooses.
+        Route::get('/super-admins/admins/{admin}', AdministratorRecordController::class)
+            ->whereNumber('admin')
+            ->middleware(['auth:sanctum', 'authorised:store=super_admins,ability=accounts:read'])
+            ->name('super-admins.admins.record');
     });

@@ -21,18 +21,6 @@ use Illuminate\Support\ServiceProvider;
 class PasswordResetServiceProvider extends ServiceProvider
 {
     /**
-     * The model behind each account type.
-     *
-     * @deprecated Read it from AccountTypeRegistry instead. This map is kept as a
-     *             pointer so that the two lists cannot drift: the registry is now
-     *             the only copy, and this is where the password reset flow reads
-     *             it from.
-     *
-     * @var array<class-string<Model>, AccountType>
-     */
-    private const ACCOUNT_TYPES = [];
-
-    /**
      * Register any application services.
      */
     public function register(): void
@@ -46,6 +34,12 @@ class PasswordResetServiceProvider extends ServiceProvider
     public function boot(): void
     {
         ResetPassword::createUrlUsing(function (Model $notifiable, string $token): string {
+            // The registry, not a map held here. It was the only place a second
+            // copy of the model-to-store mapping lived, and it was an empty one
+            // — a constant annotated as deprecated and read by nothing, left
+            // behind as a pointer to a decision that had since been made properly.
+            // A pointer to code that no longer calls it is a claim that two lists
+            // are kept in step, and there was only one list.
             $accountType = AccountTypeRegistry::for($notifiable);
 
             $url = (string) config('password-reset.urls.'.$accountType->broker());

@@ -1,13 +1,26 @@
 /**
  * One error shape for four applications.
  *
- * The back end already returns Laravel's default envelope: a `message`, and for
- * a validation failure an `errors` map. Every other failure mode — a dead
- * network, a 500 from a container that just restarted, a response that no longer
- * matches the declared shape — arrives as something else entirely. Four
- * applications that each branch on the raw failure is four applications that
- * each get it slightly wrong, so everything is turned into one `ApiError` here
- * and the operations layer never sees a raw response.
+ * The back end answers every failure in one envelope — `message`, `code`,
+ * `errors`, `details` — so the work here is no longer inventing a shape. It is
+ * turning *every* kind of failure into one `ApiError`: a refusal the back end
+ * composed, a dead network, a 500 from a container that just restarted, a
+ * response that no longer matches the declared shape. Four applications that each
+ * branch on the raw failure is four applications that each get it slightly wrong,
+ * so nothing reaches the operations layer except an `ApiError`.
+ *
+ * `code` and `details` are the two that earn the envelope its keep. `kind` alone
+ * is a category — a front end can say "you may not do that" — while `code` says
+ * *which* refusal it is, in words the back end promises not to reword:
+ * `wrong_account_type` is a person in the wrong application, and
+ * `ability_required` is a person in the right one whose token lacks a function.
+ * Both are 403s, so neither the status nor the message can tell them apart.
+ * `details` carries what to act on: the account type an endpoint expected, the
+ * ability it required, how long a throttled request has to wait.
+ *
+ * All of those default to `null` or `{}` because a transport failure and a
+ * hand-rolled 5xx have no envelope behind them, and this type has to survive
+ * those too.
  */
 
 export type ApiErrorKind =
@@ -34,8 +47,15 @@ export interface ApiErrorInit {
     kind: ApiErrorKind;
     message: string;
     status: number;
+    /** The back end's stable identifier, e.g. `ability_required`. Null when the failure was not one it composed. */
     code: string | null;
     fields: Record<string, string[]>;
+    /**
+     * Structured facts from the back end's envelope: `required_ability`,
+     * `account_type`, `retry_after`. Always an object, often empty, so a caller
+     * reads `error.details.retry_after` without checking whether the key exists.
+     */
+    details: Record<string, unknown>;
     retryable: boolean;
     cause?: unknown;
 }
@@ -51,6 +71,7 @@ export class ApiError extends Error implements ApiErrorInit {
     readonly status: number;
     readonly code: string | null;
     readonly fields: Record<string, string[]>;
+    readonly details: Record<string, unknown>;
     readonly retryable: boolean;
     readonly cause?: unknown;
 
@@ -62,6 +83,7 @@ export class ApiError extends Error implements ApiErrorInit {
         this.status = init.status;
         this.code = init.code;
         this.fields = init.fields;
+        this.details = init.details;
         this.retryable = init.retryable;
         this.cause = init.cause;
     }
@@ -113,6 +135,15 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
     typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 
 /**
+ * The envelope's `details`, if the body carried one.
+ *
+ * Anything that is not a plain object is dropped rather than passed through, so a
+ * hand-rolled error body cannot make `error.details.required_ability` a string
+ * where the operations layer expects to read a value out of an object.
+ */
+const detailsFrom = (body: Record<string, unknown> | null): Record<string, unknown> => asRecord(body?.['details']) ?? {};
+
+/**
  * Pull Laravel's `errors` map into a plain field-to-messages record.
  *
  * A field with a non-list value is kept as a single message, so a hand-rolled
@@ -158,6 +189,7 @@ export function normaliseErrorResponse(status: number, body: unknown): ApiError 
         status,
         code,
         fields,
+        details: detailsFrom(record),
         retryable: RETRYABLE.has(status),
         message: messageFrom(record, defaultMessageForKind(kind, status)),
     });
@@ -173,6 +205,7 @@ export function normaliseTransportFailure(cause: unknown): ApiError {
         status: 0,
         code: null,
         fields: {},
+        details: {},
         retryable: true,
         message: 'The back end could not be reached.',
         cause,
@@ -191,6 +224,7 @@ export function normaliseContractFailure(path: string, expected: string, cause: 
         status: 0,
         code: 'response_shape_mismatch',
         fields: {},
+        details: {},
         retryable: false,
         message: `The back end returned a response that does not match ${expected} (${path}).`,
         cause,
