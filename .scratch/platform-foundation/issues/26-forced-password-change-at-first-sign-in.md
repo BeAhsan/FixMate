@@ -12,6 +12,21 @@ true, and it is a migration, four routes, a guard, a use case and a change to th
 sign-in contract. Story 18 and 22, which *are* screens, are done; this one is
 recorded separately so the size is visible before anyone starts it.
 
+## The provisioning question is answered; the rest is not
+
+`fixmate:create-account` now exists and closes the urgent half. It creates one
+account of any of the four types with a generated password, printed once and never
+logged. **The flag still does not**, and that is deliberate rather than an
+oversight: adding a `must_change_password` column here would make every record
+created by the command look protected while nothing enforced it, because the guard
+below is the part that makes the flag mean anything. The column and the guard land
+together, in this ticket.
+
+What provisioning gives story 21 in the meantime: the new owner is handed a random
+password they did not choose, and the reset flow that already exists lets them
+replace it immediately. So the *outcome* is reachable today; what is missing is
+that the system insists on it rather than making it the obvious next step.
+
 ## What has to exist
 
 - [ ] A `must_change_password` flag on all four account tables, defaulting to false
@@ -60,35 +75,21 @@ refused at change.
 - **Any front end beyond routing to the change screen.** The four dashboards are
   shells by design, and the screen itself is a fifth screen in a shared shell.
 
-## The decision this is blocked on
+## The decision this was blocked on — answered
 
-**Who sets `must_change_password`?**
+**Who sets `must_change_password`?** Nobody yet, and that is now a choice rather
+than an oversight.
 
-Today the only things that create accounts are `DatabaseSeeder` — which creates one
-test user with the factory password — and the model factories used by tests. There
-is no provisioning flow, no invitation, and no staff-creation endpoint; ticket 25
-manages accounts but does not create them, and creating a super administrator is
-the first super administrator's own problem.
+- **`fixmate:create-account` shipped**, and it deliberately does **not** set the
+  flag. It closes the gap that mattered — a fresh install can now produce its
+  first administrator — and a flag it set with nothing enforcing it would be
+  worse than no flag, because it reads as protection on the record of every
+  account the command creates.
+- **The column and the guard land here, together**, in this ticket. The
+  provisioning command then sets the flag, and the two become one change.
+- The seeder is not used as the producer. A production account created by a
+  seeder is a fixture with a real address in it, and that is a habit worth not
+  forming while the alternative is a command that already exists.
 
-So the flag has no producer. Three ways forward, and the answer changes what gets
-built:
-
-1. **The seeder, for now.** The flag exists, the seeder sets it, the whole path is
-   real and testable, and the producer is replaced when provisioning arrives. Smallest
-   honest slice; nothing pretends accounts are provisioned.
-2. **A provisioning command** — `php artisan fixmate:create-super-admin` and the
-   same for the other three types, each creating an account with a random password
-   and the flag set, printing the password once. This is what a real deployment
-   needs *today*, because there is currently no way to create the first
-   administrator of a fresh install at all, and it makes the flag's producer real.
-   It is also a new surface that prints a secret to a terminal, which deserves its
-   own care and its own ticket.
-3. **Defer the whole ticket** until the domain decides how staff come into being.
-   Defensible — but then story 21 stays uncovered, and the accounts that *do* exist
-   (the seeder's, the factories') keep a shared password.
-
-My recommendation is **1 plus a separate ticket for 2**. The flag, the route and the
-guard are the same work either way, and 1 proves all of it. But if the answer is
-that a fresh install currently has no way to create its first administrator, that
-is a more urgent gap than this story, and it should be said out loud rather than
-left implicit in a password flag.
+The provisioning command is
+`php artisan fixmate:create-account <type> --name= --email= [--password=]`.

@@ -647,6 +647,36 @@ never enter an image layer.
   that ends for no visible reason, and the symptom is very hard to trace.
   `signInResponse` keeps the historical `token` key while the renewal route is
   explicit about `access_token`; that asymmetry is deliberate.
+- **`fixmate:create-account` is the only way to create an account**, and it exists
+  because a fresh install had none — no registration, no invitation, no staff
+  endpoint, and a seeder making one test user with a known password. Four things
+  about it are not obvious:
+  - **It does not consult the other three stores.** An operator provisioning into
+    `admins` is entitled to an answer about `admins`. A command that reported
+    "that address already exists" when it only exists as a *customer* would be a
+    cross-store account oracle, and the isolation the credential-store tests assert
+    would have a command-shaped hole in it. Uniqueness is per table anyway.
+  - **The generated password is drawn one character from each of four classes and
+    then shuffled,** not sampled from a combined alphabet — sampling can
+    legitimately produce a password with no digit in it, and the policy requires
+    one. The shuffle uses `random_int`, not `shuffle()`, which uses the global PRNG.
+  - **It does not set `must_change_password`.** Adding the column here would make
+    every account it creates look protected while nothing enforced it, because the
+    guard that gives the flag meaning is ticket 26. The column and the guard land
+    together.
+  - **The tests read `Artisan::output()`, which drains the buffer.** `fetch()` is
+    not a peek: calling `Artisan::output()` twice returns the content once and then
+    an empty string. The first version of the test helper called it twice — once to
+    build an assertion message, which PHP evaluates whether or not the assertion
+    passes — and every test that read the password failed against `''`.
+- **An Artisan command returns a failing status; it does not `exit()`.** `exit()`
+  tears the process down, and under a test runner that kills the whole suite: a
+  generated password with no digit turned one test into twelve errors, which buried
+  the one that was actually about it.
+- **A sign-in response nests the account under a key named for its own type** —
+  `data.user` for an end user, `data.super_admin` for a super administrator.
+  Reaching for `data.user` on a super administrator's response reads as a
+  provisioning failure rather than a wrong path.
 - **A front end must not reword a refusal.** `describeSignInFailure` passes the
   back end's message through verbatim and rewrites only the two cases where the
   back end said nothing (`network`, `contract`). The sign-in refusal is

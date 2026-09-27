@@ -36,8 +36,10 @@ web server, the queue worker and the scheduler always run identical code.
 | `Jenkinsfile` | The pipeline. |
 | `deploy/deploy.sh` | Runs **on the VPS**. Pull all five images, migrate, swap, health-check each, roll back. |
 | `deploy/rollback.sh` | Manual rollback of the whole set from the VPS. |
+| `deploy/status.sh` | What is running, what is on record, and whether they agree. |
 | `deploy/env.example` | Template for the VPS `.env`. |
 | `deploy/jenkins/` | The Jenkins controller's own image and compose file. |
+| `deploy/test-deploy.sh` | Tests for the three scripts above, run by both CI gates. |
 
 ## Before you start
 
@@ -365,6 +367,33 @@ docker compose -f docker-compose.prod.yml logs -f app
 docker compose -f docker-compose.prod.yml exec app php artisan queue:restart
 docker compose -f docker-compose.prod.yml exec app php artisan about
 ```
+
+### Creating the first account
+
+A fresh install has no accounts, and there is no registration, no invitation and
+no admin panel. The first one is created from the command line:
+
+```sh
+cd /opt/fixmate
+docker compose -f docker-compose.prod.yml exec app \
+    php artisan fixmate:create-account super_admins \
+    --name="Ada Lovelace" --email=ada@example.com
+```
+
+`type` is one of `users`, `workers`, `admins`, `super_admins`. A password is
+generated and **printed once** — it is not stored in readable form and not written
+to any log, so if you lose it, run the command again with a different address.
+
+Two things worth knowing before you use it:
+
+- **Hand the password over out of band.** It is on your terminal, in your scrollback
+  and in whatever you copy it into. The intended next step is that the new owner
+  signs in and uses "forgot password" to set their own.
+- **`--password` exists and is a bad idea.** An argument is visible in shell history
+  and in the process listing. The command warns you when you use it.
+
+The command only checks the store it is provisioning into. If it says an address is
+taken, that is true of *that* account type and says nothing about the other three.
 
 ## Things worth knowing
 
