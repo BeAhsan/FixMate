@@ -382,7 +382,52 @@ never enter an image layer.
 - **`apps/user/Dockerfile` must copy every shared package's manifest *and*
   source.** Forgetting the source fails the build with "Module not found";
   forgetting the manifest fails `npm ci`, because the lockfile names a member
-  whose package.json is absent.
+  whose package.json is absent. There are three shared packages now —
+  `api-client`, `session`, `ui` — and each needs both lines.
+- **`packages/ui` is the shared design system, and it imports nothing from
+  `@fixmate/session`.** The shell takes `identity`, `abilities`, `sections` and
+  `onSignOut` as props. That keeps the design system free of session opinions,
+  makes the components testable without a session, and leaves the session layer
+  free of opinions about headers. Each application wires the two together in one
+  small file (`apps/user/app/dashboard-shell.tsx`); the other three are copies
+  with three values changed.
+- **The `@source` path in `globals.css` is three levels up and fails silently.**
+  `@source '../../../packages/ui/src'` — resolved against `apps/user/app/`, not
+  the workspace root. Two levels resolves to `apps/packages/ui`, which does not
+  exist, and **Tailwind ignores a missing source with no warning**: the build
+  succeeds and every class in the shell is simply absent. `apps/user/Dockerfile`
+  therefore greps the compiled CSS for `max-w-5xl`, a class only `packages/ui`
+  uses, so the image build fails instead of shipping an unstyled shell.
+- **Tailwind does not follow the workspace symlink.** `@fixmate/ui` is reached
+  through `node_modules/@fixmate/ui`, and Tailwind's scanner does not follow it,
+  so the `@source` line is required rather than an optimisation.
+- **Rendering the raw account type is a bug, and was one.** The back end's `me`
+  answers `account_type: "users"` because that is what it routes on. Putting that
+  on screen produced "Signed in as users"; `accountTypeLabel` in `@fixmate/ui`
+  maps the four to the back end's own `AccountType::label()` strings, and a test
+  asserts all four line up. Unknown values pass through rather than blanking —
+  "signed in as whatever-this-is" is reportable, an empty header is not.
+- **Navigation is filtered by ability, and the filter is a courtesy, not the
+  control.** `EnsureAccountCan` is the control. `apps/user` deliberately lists an
+  `accounts:read` section that a `users:*` token cannot reach, so the filter is
+  proven to run on that application rather than passing because the list happened
+  to contain nothing restricted. If abilities cannot be read they stay empty,
+  which fails closed.
+- **Component tests need `afterEach(cleanup)` written out.** Testing Library
+  registers it only when vitest's `globals` are on, and `packages/ui` turns them
+  off deliberately. Without it, renders accumulate and `getByRole` fails with
+  "found multiple elements", which reads like a component bug.
+- **jsdom, not happy-dom, for component tests.** The `@testing-library`
+  accessibility queries rely on the accessibility tree; a partial implementation
+  answers "is this a link?" wrongly often enough that a green suite would mean
+  nothing.
+- **Tab order follows visual order, so sign-out is reached before the
+  navigation.** Asserted as a whole sequence rather than "the button is
+  focusable", because a shell that skipped the navigation passes the weaker test.
+- **Verified rather than assumed:** Lighthouse accessibility 1.0 on the sign-in
+  screen and on the shell, no horizontal overflow at a 200% root font size, a
+  correct `viewport` meta, and sign-out clearing storage and landing on
+  `/sign-in/` with no "session ended" message — a deliberate sign-out is silent.
 - **The sign-in response schema validates `renewal_token` and both expiries.**
   Without them a sign-in that returned no way to renew would produce a session
   that ends for no visible reason, and the symptom is very hard to trace.
