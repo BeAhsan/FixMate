@@ -11,6 +11,7 @@ use App\Infrastructure\IdentityAndAccess\Repositories\EloquentAdminRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentEndUserRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentSuperAdminRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentWorkerRepository;
+use App\Infrastructure\IdentityAndAccess\SessionTokenIssuer;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -95,6 +96,14 @@ class AppServiceProvider extends ServiceProvider
         // step: change the cost and the equaliser follows it.
         $this->app->bind(AuthenticationService::class, fn (): AuthenticationService => new AuthenticationService(
             (int) config('hashing.bcrypt.rounds', 12),
+        ));
+
+        // The two token lifetimes are read from configuration here, once. The
+        // issuer is the only thing that should know how long a token lives, and
+        // this is the one place allowed to know that the answer is configurable.
+        $this->app->singleton(SessionTokenIssuer::class, fn (): SessionTokenIssuer => new SessionTokenIssuer(
+            accessLifetimeMinutes: (int) config('sanctum.access_lifetime_minutes'),
+            renewalLifetimeMinutes: (int) config('sanctum.renewal_lifetime_minutes'),
         ));
     }
 

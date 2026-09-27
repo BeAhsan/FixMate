@@ -18,6 +18,8 @@
  * ```
  */
 
+export { LOCAL_API_URL, resolveApiBaseUrl } from './base-url'
+
 export { createApiClient, buildQuery } from './http'
 export type { ApiClient, ApiClientOptions, HttpMethod, Query, RequestOptions, Route } from './http'
 
@@ -30,10 +32,16 @@ export type { Schema } from './schema'
 export { createOperations } from './operations'
 export type {
     AcknowledgementResult,
+    AdminAccount,
+    CurrentAccount,
     ForgotPasswordInput,
     OperationName,
     Operations,
+    RenewedSession,
     ResetPasswordInput,
+    SignInAccount,
     SignInInput,
     SignInResult,
+    SignOutResult,
+    WorkerSignInResult,
 } from './operations'

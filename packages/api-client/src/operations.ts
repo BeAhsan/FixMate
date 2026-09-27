@@ -1,9 +1,17 @@
 import { signin as signinUser } from './generated/routes/users'
 import { me as meUser } from './generated/routes/users'
+import { signOut as signOutUserRoute } from './generated/routes/users'
+import { renew as renewUser } from './generated/routes/users/session'
 import { signin as signinWorker } from './generated/routes/workers'
 import { me as meWorker } from './generated/routes/workers'
+import { signOut as signOutWorkerRoute } from './generated/routes/workers'
+import { renew as renewWorker } from './generated/routes/workers/session'
 import { signin as signinAdmin } from './generated/routes/admins'
+import { signOut as signOutAdminRoute } from './generated/routes/admins'
+import { renew as renewAdmin } from './generated/routes/admins/session'
 import { signin as signinSuperAdmin } from './generated/routes/super-admins'
+import { signOut as signOutSuperAdminRoute } from './generated/routes/super-admins'
+import { renew as renewSuperAdmin } from './generated/routes/super-admins/session'
 import { forgotPassword as forgotPasswordUser, resetPassword as resetPasswordUser } from './generated/routes/users'
 import { forgotPassword as forgotPasswordWorker, resetPassword as resetPasswordWorker } from './generated/routes/workers'
 import {
@@ -35,6 +43,28 @@ import type { ApiClient, Route } from './http'
  * response stops matching at runtime.
  */
 
+/**
+ * What renewing a session resolves with: a new access token, and a new renewal
+ * token to replace the one just spent.
+ *
+ * Both are returned on every renewal, and the rotation is the point — the token
+ * that was presented is dead the moment this arrives, so a copy taken from
+ * browser storage is good for exactly one exchange. A front end that keeps using
+ * the old one is not "slightly behind", it is signed out, which is the intended
+ * consequence rather than a bug to work around.
+ */
+export interface RenewedSession {
+    access_token: string
+    renewal_token: string
+    access_token_expires_at: string
+    renewal_token_expires_at: string
+}
+
+/** What signing out resolves with. A sentence, because a front end shows it. */
+export interface SignOutResult {
+    message: string
+}
+
 export interface SignInInput {
     email: string
     password: string
@@ -50,24 +80,72 @@ export interface SignInResult {
     token: string
     user: SignInAccount
     abilities: string[]
+    /**
+     * The renewal token, and the two expiries.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived.
+     * A sign-in that returned a token and no way to renew it would leave the
+     * application holding an access token that silently stops working, and the
+     * symptom — a session that ends for no visible reason — is very hard to
+     * trace back to a missing field.
+     */
+    renewal_token: string
+    access_token_expires_at: string
+    renewal_token_expires_at: string
 }
 
 export interface WorkerSignInResult {
     token: string
     worker: SignInAccount
     abilities: string[]
+    /**
+     * The renewal token, and the two expiries.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived.
+     * A sign-in that returned a token and no way to renew it would leave the
+     * application holding an access token that silently stops working, and the
+     * symptom — a session that ends for no visible reason — is very hard to
+     * trace back to a missing field.
+     */
+    renewal_token: string
+    access_token_expires_at: string
+    renewal_token_expires_at: string
 }
 
 export interface AdminSignInResult {
     token: string
     admin: SignInAccount
     abilities: string[]
+    /**
+     * The renewal token, and the two expiries.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived.
+     * A sign-in that returned a token and no way to renew it would leave the
+     * application holding an access token that silently stops working, and the
+     * symptom — a session that ends for no visible reason — is very hard to
+     * trace back to a missing field.
+     */
+    renewal_token: string
+    access_token_expires_at: string
+    renewal_token_expires_at: string
 }
 
 export interface SuperAdminSignInResult {
     token: string
     super_admin: SignInAccount
     abilities: string[]
+    /**
+     * The renewal token, and the two expiries.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived.
+     * A sign-in that returned a token and no way to renew it would leave the
+     * application holding an access token that silently stops working, and the
+     * symptom — a session that ends for no visible reason — is very hard to
+     * trace back to a missing field.
+     */
+    renewal_token: string
+    access_token_expires_at: string
+    renewal_token_expires_at: string
 }
 
 /** Ask for a password reset link to be sent to an address. */
@@ -150,6 +228,9 @@ const signInResponse: Schema<{ data: SignInResult }> = object({
             email: string(),
         }),
         abilities: array(string()),
+        renewal_token: string(),
+        access_token_expires_at: string(),
+        renewal_token_expires_at: string(),
     }),
 })
 
@@ -167,6 +248,9 @@ const workerSignInResponse: Schema<{ data: WorkerSignInResult }> = object({
             email: string(),
         }),
         abilities: array(string()),
+        renewal_token: string(),
+        access_token_expires_at: string(),
+        renewal_token_expires_at: string(),
     }),
 })
 
@@ -192,6 +276,9 @@ const adminSignInResponse: Schema<{ data: AdminSignInResult }> = object({
         token: string(),
         admin: object(accountFields),
         abilities: array(string()),
+        renewal_token: string(),
+        access_token_expires_at: string(),
+        renewal_token_expires_at: string(),
     }),
 })
 
@@ -200,6 +287,9 @@ const superAdminSignInResponse: Schema<{ data: SuperAdminSignInResult }> = objec
         token: string(),
         super_admin: object(accountFields),
         abilities: array(string()),
+        renewal_token: string(),
+        access_token_expires_at: string(),
+        renewal_token_expires_at: string(),
     }),
 })
 
@@ -272,6 +362,30 @@ const adminAccountResponse: Schema<{ data: AdminAccount }> = object({
         name: string(),
         email: string(),
         status: string(),
+    }),
+})
+
+/**
+ * A renewal takes no body.
+ *
+ * The renewal token is the credential, and it travels in the `Authorization`
+ * header like any other — the fetch wrapper attaches it. There is deliberately
+ * no field for it here: a body field would be a second way to present the same
+ * credential, and one of the two would be a place a token could end up in a
+ * request log.
+ */
+const renewedSessionResponse: Schema<{ data: RenewedSession }> = object({
+    data: object({
+        access_token: string(),
+        renewal_token: string(),
+        access_token_expires_at: string(),
+        renewal_token_expires_at: string(),
+    }),
+})
+
+const signOutResponse: Schema<{ data: SignOutResult }> = object({
+    data: object({
+        message: string(),
     }),
 })
 
@@ -367,6 +481,45 @@ const definitions = {
         // 404 depending on the day.
         route: (admin: number) => showAdmin({ admin }) satisfies Route,
         response: adminAccountResponse,
+    },
+
+    // The session operations. Four of each, for the same reason the `me`
+    // operations are four: each application calls its own door, and the back end
+    // refuses a token presented at the wrong one.
+    //
+    // Renewal and sign-out take no body — the credential is in the header, put
+    // there by the fetch wrapper — so they declare a response and nothing else.
+    renewSessionUser: {
+        route: renewUser() satisfies Route,
+        response: renewedSessionResponse,
+    },
+    renewSessionWorker: {
+        route: renewWorker() satisfies Route,
+        response: renewedSessionResponse,
+    },
+    renewSessionAdmin: {
+        route: renewAdmin() satisfies Route,
+        response: renewedSessionResponse,
+    },
+    renewSessionSuperAdmin: {
+        route: renewSuperAdmin() satisfies Route,
+        response: renewedSessionResponse,
+    },
+    signOutUser: {
+        route: signOutUserRoute() satisfies Route,
+        response: signOutResponse,
+    },
+    signOutWorker: {
+        route: signOutWorkerRoute() satisfies Route,
+        response: signOutResponse,
+    },
+    signOutAdmin: {
+        route: signOutAdminRoute() satisfies Route,
+        response: signOutResponse,
+    },
+    signOutSuperAdmin: {
+        route: signOutSuperAdminRoute() satisfies Route,
+        response: signOutResponse,
     },
 } as const
 
@@ -494,6 +647,60 @@ export interface Operations {
      * that does not exist.
      */
     showAdmin(admin: number): Promise<AdminAccount>
+
+    /**
+     * Exchange a renewal token for a new access token and a new renewal token.
+     *
+     * The caller's existing renewal token is spent by this call. That is the
+     * whole design: a renewal token lives in browser storage, where injected
+     * script can read it, so it is given exactly one use and a short life. A
+     * caller that retries with the same token gets a 401 and should treat that
+     * as signed out rather than as a transient failure — the token is not coming
+     * back, and retrying is how a front end ends up in a loop.
+     *
+     * Rejects with `unauthenticated` when the renewal token is unknown, already
+     * spent or expired, and with `forbidden` when it belongs to another account
+     * type or the account has been suspended since it was issued. The suspended
+     * case is why a renewal is worth attempting on load rather than trusting a
+     * token found in storage.
+     */
+    renewSessionUser(): Promise<RenewedSession>
+
+    /** As {@link renewSessionUser}, at the worker's door. */
+    renewSessionWorker(): Promise<RenewedSession>
+
+    /** As {@link renewSessionUser}, at the administrator's door. */
+    renewSessionAdmin(): Promise<RenewedSession>
+
+    /** As {@link renewSessionUser}, at the super administrator's door. */
+    renewSessionSuperAdmin(): Promise<RenewedSession>
+
+    /**
+     * End every session this account has, in all four applications.
+     *
+     * Revocation is server-side, so a front end cannot rely on this alone to
+     * clear the other three: what it guarantees is that the access tokens they
+     * are holding stop being accepted, and that the renewal token which brought
+     * this session back is destroyed so a reload cannot undo the sign-out. The
+     * caller should still discard its own copy of both.
+     *
+     * Rejects with `unauthenticated` when the token has already been revoked —
+     * which includes signing out a second time. **Treat that as success.** The
+     * end state the caller asked for has been reached, and the 401 is only
+     * saying the credential is no longer valid. Showing an error for it would
+     * mean the one moment a person most wants confirmation is the moment they
+     * are told something went wrong.
+     */
+    signOutUser(): Promise<SignOutResult>
+
+    /** As {@link signOutUser}, at the worker's door. */
+    signOutWorker(): Promise<SignOutResult>
+
+    /** As {@link signOutUser}, at the administrator's door. */
+    signOutAdmin(): Promise<SignOutResult>
+
+    /** As {@link signOutUser}, at the super administrator's door. */
+    signOutSuperAdmin(): Promise<SignOutResult>
 }
 
 /**
@@ -628,6 +835,62 @@ export function createOperations(client: ApiClient): Operations {
         async showAdmin(admin) {
             const { data } = await client.request(definitions.showAdmin.route(admin), {
                 response: definitions.showAdmin.response,
+            })
+
+            return data
+        },
+        async renewSessionUser() {
+            const { data } = await client.request(definitions.renewSessionUser.route, {
+                response: definitions.renewSessionUser.response,
+            })
+
+            return data
+        },
+        async renewSessionWorker() {
+            const { data } = await client.request(definitions.renewSessionWorker.route, {
+                response: definitions.renewSessionWorker.response,
+            })
+
+            return data
+        },
+        async renewSessionAdmin() {
+            const { data } = await client.request(definitions.renewSessionAdmin.route, {
+                response: definitions.renewSessionAdmin.response,
+            })
+
+            return data
+        },
+        async renewSessionSuperAdmin() {
+            const { data } = await client.request(definitions.renewSessionSuperAdmin.route, {
+                response: definitions.renewSessionSuperAdmin.response,
+            })
+
+            return data
+        },
+        async signOutUser() {
+            const { data } = await client.request(definitions.signOutUser.route, {
+                response: definitions.signOutUser.response,
+            })
+
+            return data
+        },
+        async signOutWorker() {
+            const { data } = await client.request(definitions.signOutWorker.route, {
+                response: definitions.signOutWorker.response,
+            })
+
+            return data
+        },
+        async signOutAdmin() {
+            const { data } = await client.request(definitions.signOutAdmin.route, {
+                response: definitions.signOutAdmin.response,
+            })
+
+            return data
+        },
+        async signOutSuperAdmin() {
+            const { data } = await client.request(definitions.signOutSuperAdmin.route, {
+                response: definitions.signOutSuperAdmin.response,
             })
 
             return data

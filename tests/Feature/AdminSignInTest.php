@@ -181,7 +181,9 @@ class AdminSignInTest extends TestCase
         $this->assertStringContainsString(InvalidCredentials::MESSAGE, $wrongStore->json('message'));
         $rightStore->assertOk();
         $this->assertEquals(['admins:*'], $rightStore->json('data.abilities'));
-        $this->assertDatabaseCount('personal_access_tokens', 1);
+        // Two, not one: the refused attempt issued nothing, and the accepted
+        // one issued a session, which is an access token plus a renewal token.
+        $this->assertDatabaseCount('personal_access_tokens', 2);
     }
 
     /**

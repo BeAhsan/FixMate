@@ -12,9 +12,14 @@ megabytes of nginx rather than a running application.
 
 It talks to the back end. It calls the generated typed client — never a
 hand-written URL — through `lib/api.ts`, which is the only module in this
-application that knows the API exists. The sign-in screen is at
-`/sign-in/`, and the token it receives is held in memory by `lib/session.ts`
-and nowhere else.
+application that knows the API exists. The session itself lives in
+`@fixmate/session`, so all four applications share one implementation of
+sign-in, silent renewal and sign-out.
+
+`lib/api.ts` also fixes the construction order, which is load-bearing: the access
+token holder, then the client that reads it, then the operations, then the
+session that writes it. `apps/user` passes **its own three operations by name**,
+so it cannot reach a worker's or an administrator's door even by accident.
 
 ## The back end's address is fixed at build time
 
@@ -108,15 +113,24 @@ indistinguishable from a build that silently stopped rendering.
 `/up` answers 200 from the export's own `index.html`, so the health check
 proves the application is being served rather than that a port is open.
 
+## Where the session lives
+
+The access token is a variable and nothing else. The renewal token — which is
+the only credential stored in the browser, and is therefore the only one worth
+almost nothing — is in `localStorage` under `fixmate.user.renewal`, and is
+rotated on every use.
+
+`app/session-provider.tsx` restores the session once, in the root layout, rather
+than per page. That placement is not a style choice: the access token is in
+memory, so *every* page has to spend the renewal token on arrival. With the
+restore living on the sign-in screen alone, reloading the landing page left the
+person signed out — the exact failure this arrangement exists to prevent.
+
 ## What is deliberately not here yet
 
-- **The session layer** (ticket 16): the renewal token, silent renewal, and
-  the signed-in state exposed to the application. Until then a page reload signs
-  the person out, which is the honest consequence of holding the access token in
-  memory only.
-- **The application shell** (ticket 17): header, navigation, sign-out. The
-  landing page is plain on purpose, so the difference the shell makes is
-  visible when it arrives.
+- **The application shell** (ticket 17): header, navigation, and the sign-out
+  button. The session layer can already sign out; there is simply nowhere to put
+  the control yet.
 - **A Docker Compose service** (ticket 21) and **a pipeline stage** (ticket 24).
   The image is built and verified here; nothing deploys it yet.
 

@@ -135,8 +135,8 @@ a duplicate set back under colliding names. This repo owns `.opencode/skills/`.
 
 ## Commands
 
-Gate order matches the Jenkins `Verify` → `Test` stages — **Pint first**, then
-tests:
+Gate order matches the Jenkins `Verify` → `Test` → `Front end` stages — **Pint
+first**, then tests, then the front ends:
 
 ```sh
 vendor/bin/pint --dirty --format agent   # format what you touched
@@ -155,13 +155,15 @@ php artisan api-docs:check               # compare packages/api-client/openapi.j
 ```
 
 `api-client:check` is the check that catches a renamed route. Changing a route
-means changing `routes/api.php`, `packages/api-client/contract.json` and
+means changing `routes/api.php`, `packages/api-client/contract.json` and the
 `packages/api-client/src/operations.ts` together, or the check fails.
-`api-docs:check` is a *separate* command for `openapi.json`, and the separation
-is load-bearing: `contract.json` has no field for a security requirement, so
-nothing in `api-client:check` would notice a document describing a protected
-route as open. `api-docs:check` reads the route's own gathered middleware, so it
-does not trust the document's sentence about it. The TypeScript side:
+`api-docs:check` is a *separate* command for `openapi.json`, and the separation is
+load-bearing: `contract.json` has no field for a security requirement, so nothing
+in `api-client:check` would notice a document describing a protected route as
+open. `api-docs:check` reads the route's own gathered middleware, so it does not
+trust the document's sentence about it.
+
+The TypeScript side:
 
 ```sh
 npm install                             # once, from the root
@@ -170,10 +172,10 @@ npm run typecheck
 npm test
 ```
 
-`npm run build` is the single documented build for the whole workspace, and it
+`npm run build` is the single documented build for a developer on a host, and it
 is the only one worth memorising. It runs `php artisan api-client:generate`
-first, because `src/generated/` is not committed and nothing compiles without
-it, then every member's `build`.
+first, because `src/generated/` is not committed and nothing compiles without it,
+then every member's `build`.
 
 **It does not pass `--if-present`, unlike `typecheck` and `test`.** A member
 without a `build` script is a mistake, and `--if-present` would skip it and exit
@@ -183,6 +185,13 @@ script: "build"` and names the member. Do not "tidy" the flag away.
 
 `typecheck` and `test` keep `--if-present` deliberately: a package with no tests
 is legitimate.
+
+**CI does not use `npm run build`.** Both gates run
+`php artisan api-client:generate` as its own step and then
+`npm run build --workspaces`, because the root script's first line needs PHP and
+the build needs Node, and the Jenkins stage runs them in separate containers —
+`npm run build` there exits 127 with `php: not found`. The root command stays
+correct for a host, where both are installed.
 
 Both `npm run typecheck` and `npm run build` need
 `php artisan api-client:generate` to have happened, because `src/generated/` is
@@ -198,7 +207,24 @@ docker build --target test -t fixmate/app:ci . && docker run --rm fixmate/app:ci
 ```
 
 That target's `CMD` is `php artisan test`, so `docker run` with no argument runs
-the suite.
+the suite. The front-end stage is two containers, and the workspace has to be
+bind-mounted into both:
+
+```sh
+docker run --rm -v "$PWD":/w -w /w fixmate/app:ci php artisan api-client:generate
+docker run --rm -v "$PWD":/w -w /w -v fixmate-npm-cache:/root/.npm \
+    -e NEXT_PUBLIC_API_URL node:22-alpine \
+    sh -c 'npm ci && npm run typecheck && npm test && npm run build --workspaces'
+rm -rf packages/api-client/src/generated
+```
+
+**Running that on a Mac replaces your `node_modules` with Linux binaries.** The
+`node` container's `npm ci` writes musl builds over the host's darwin ones, and
+the next host-side `npm test` fails with `Cannot find native binding` from
+`rolldown`. Recover with `rm -rf node_modules && npm ci`. It is harmless on
+Jenkins, where the workspace is only ever used from inside Linux containers, and
+it is the price of the bind mount the stage needs — a socket-only controller
+cannot see the workspace at all.
 
 **Tests need no services.** `phpunit.xml` pins `DB_CONNECTION=sqlite` and
 `DB_DATABASE=:memory:`, so the suite never touches a real database. The local
@@ -207,11 +233,38 @@ is only what a host-side `php artisan serve` uses, because `.env` selects sqlite
 
 ### Two CI systems, one gate
 
-`.github/workflows/laravel.yml` and the Jenkins `Verify`/`Test` stages run the
-same checks — Pint, then the suite, on the same PHP version. It is a
-pull-request gate and nothing more: it does not build or push the image, because
-Jenkins pushes straight to `ghcr.io` from the controller. If you add a check, add
-it in both places or neither.
+`.github/workflows/laravel.yml` and the Jenkins `Verify`/`Test`/`Front end` stages
+run the same checks — Pint, the suite, both drift checks, and the four front
+ends' type-check, test and build — on the same PHP version. It is a pull-request
+gate and nothing more: it does not build or push the image, because Jenkins pushes
+straight to `ghcr.io` from the controller. If you add a check, add it in both
+places or neither.
+
+Three things about the front-end half that are easy to get wrong:
+
+- **The pull-request workflow has a separate `front-end` job**, not more steps in
+  the PHP one, so a front-end failure is reported as a front-end failure. It needs
+  `setup-php` as well as `setup-node`, which looks redundant and is not: the typed
+  client is generated by PHP and never committed, so nothing can typecheck without
+  it. It needs no `key:generate` — generation does not read `APP_KEY`.
+- **Jenkins runs the front ends in containers, with the workspace bind-mounted.**
+  The other stages are socket-only, but a `node` container cannot see the
+  workspace without a mount, and the workspace is where the generated client has
+  to land. The `node:22-alpine` container therefore mounts `$PWD` at `/w`, and the
+  stage removes `packages/api-client/src/generated` afterwards so the deploy
+  stages do not inherit build output.
+- **The front-end duplication rule is caught by the *PHP* job.**
+  `FrontEndApplicationsTest` asserts that no application contains a copy of the
+  sign-in flow or the shell, and it lives in `php artisan test` — so the two jobs
+  are not independent, and a front-end architectural regression surfaces as a
+  failing PHP job. That is where it belongs: the rule is repository-wide, and a
+  front-end test could only ever see its own application.
+
+Both gates were demonstrated failing, not just passing: a TypeScript error
+(`npm run typecheck`), a failing front-end test (`npm test`), a route that cannot
+be statically exported (the per-application test, then `npm run build`), a copied
+sign-in flow (`php artisan test`), and a route renamed without the contract
+(`api-client:check`, then a compile error naming the missing export).
 
 ### Dockerfile stages
 
@@ -293,12 +346,47 @@ never enter an image layer.
   with the `api` middleware group under Laravel's default `api` prefix — still
   not versioned. The spec wants a versioned prefix, but that decision belongs
   to whichever ticket adds the first real route group, not to this one.
-- **There is one front-end application: `apps/user`.** There is a root
-  `package.json` (npm workspaces: `apps/*`, `packages/*`), one shared package
-  `packages/api-client`, and one application. The other three arrive with
-  tickets 15 to 19 and populate `apps/`. Still no `resources/`, no
-  `public/build`, no Vite — and **still do not add a front-end build step to
-  the API image**, which builds one image that serves three roles.
+- **All four applications exist and each is twenty lines of configuration.**
+  `apps/<name>/lib/application.ts` is the application: an `application` key, an
+  address, a navigation and some copy. Everything else is imported. This is
+  enforced by `tests/Feature/FrontEndApplicationsTest.php`, which fails if any
+  application grows a `<form>`, a `fetch`, a router call, its own `<header>`, or a
+  reference to another account type's operations.
+- **The application key, not the account type, is what an application declares.**
+  `OPERATIONS_BY_APPLICATION` in `@fixmate/session` turns `application: 'user'`
+  into four operations bound to the `users` store. An application has no way to
+  name another application's door, so the only thing that could stop it is the
+  back end's `account.can` — and that is a control, not a convention.
+- **Two Next.js constraints shape the file layout, and both fail confusingly.**
+  `createApplication()` is called at module scope in a `'use client'` module, and
+  Next refuses to *call* a client function during a server render ("Attempted to
+  call createApplication() from the server"). So the dashboard and the sign-in
+  page are client components, and the root layout — which must stay a server
+  component because it exports `metadata` — renders `app/providers.tsx`, a thin
+  client boundary. The server graph imports a *component*, never the module that
+  does the calling.
+- **A duplication rule lives in exactly one place.** It was briefly in the
+  per-application vitest file as well, and it failed there for a good reason: the
+  assertion matched the *docblock* of the file it was checking, because that
+  docblock names the constructs the rule forbids while explaining it contains
+  none. `FrontEndApplicationsTest` is authoritative; it is repository-wide and
+  runs in both CI systems. A fingerprint test must strip comments.
+- **`apps/<name>/test/static-export.test.ts` is byte-identical in all four** and
+  is on the allowed-identical list with a reason. So are `app/providers.tsx` and
+  `app/sign-in/page.tsx`, which are pure delegation and contain no logic. The
+  test also fails if an entry on that list *stops* being identical — a list that
+  quietly excuses whatever is present stops meaning anything.
+- **Verify a mutation landed before concluding a guard is broken.** A regression
+  check here "passed" because the edit had not applied, and the natural next step
+  was to start rewriting a test that was working. `grep -c` the mutation first.
+- **The four front ends are verified together, not one at a time.** Four images
+  built, four containers healthy, each serving its own `data-export-marker`. A
+  4×4 sign-in matrix returns 200 only on the diagonal with every request carrying
+  its own door's `Origin` — which proves both the store isolation and that the
+  allowed-origins list names all four. And one shared shell renders three
+  different navigations for three ability sets: a super administrator sees
+  everything, an administrator loses the `accounts:read` section, a customer has
+  none of it.
 - **`apps/user` builds to a static export, and its image has no Node in it.**
   `next.config.ts` sets `output: 'export'`, so `next build` writes `out/` and
   `apps/user/Dockerfile` copies that into an nginx image. The build context is
@@ -336,10 +424,103 @@ never enter an image layer.
   succeeds and `NEXT_PUBLIC_API_URL` simply is not set. `lib/api.ts` throws at
   module load when the address is missing, which fails `next build` and is the
   only reason this is caught at build time rather than in a browser.
-- **The access token is in a module variable and nowhere else.** Asserted live:
-  after a successful sign-in, `localStorage`, `sessionStorage` and
-  `document.cookie` are all empty. `lib/session.ts` is deliberately incomplete —
-  a reload signs you out until ticket 16 adds the renewal token.
+- **A session is two tokens, and the renewal token is the dangerous one.** The
+  access token is in memory only and expires in minutes; the renewal token is in
+  browser storage, where injected script can read it, so it carries only
+  `session:renew` and is spent on use. A super administrator's renewal token
+  carries no wildcard. `EnsureAccountCan` refuses any token carrying
+  `session:renew` — removing that one line makes a renewal token reach
+  `GET /users/me` with a 200, because that route names no ability and the
+  account-type check alone waves it through. `EnsureSessionCan` is the mirror: it
+  refuses anything that is *not* renewal-scoped, so an access token cannot drive
+  renewal.
+- **`SignOutController` has no `account.can`, and that is load-bearing.**
+  `account.can` refuses renewal tokens, and an expired access token is the
+  normal reason for signing out — so refusing the renewal token there would
+  leave a working one in storage that signs the person straight back in.
+  `ApiDocumentation` reads `session.can` as naming an account type for the same
+  reason: the four renewal doors would otherwise be documented as guarding
+  nothing, which is a false claim in the field a reader trusts.
+- **Sign-out is not idempotent, and must not be made so.** A second attempt is a
+  401, because the token it presents was revoked by the first. Returning 200
+  would mean weakening `auth:sanctum` for one route. The client documents that a
+  caller must treat the 401 as success.
+- **Sign-in issues two tokens, so `assertDatabaseCount('personal_access_tokens', 1)`
+  is wrong and there are several of them.** They were corrected, not deleted.
+- **The session lives in `packages/session`, and its access-token holder is a
+  separate object for a construction-order reason.** The client is built before
+  the session exists, so the token lives in a `createAccessTokenSource()` holder
+  that both read and write. The alternative is a closure over a `let session`
+  that is undefined until two lines later.
+- **`AccessTokenSource.presentAs` is how the renewal token is sent.** A renewal
+  needs a bearer credential and there is no access token at that moment, so the
+  holder temporarily carries the renewal token for the scope of one call and
+  restores it in a `finally`. Setting it without a scope would present a
+  browser-stored token to every later request.
+- **`restore()` with no stored renewal token reports *no* reason, not
+  `expired`.** It is reached on every first page load, so it is the most commonly
+  seen state in the application; calling it an expiry greeted a first-time
+  visitor with "your session has ended". Found by looking at a real page load.
+- **The session provider is in the root layout, not per page.** The access token
+  is in memory, so every page must restore on arrival. With the restore on the
+  sign-in screen alone, reloading the landing page left the person signed out.
+- **A scheduled renewal returns its promise** so a test can await it. It is
+  `void`-ed by a real timer and by nothing else; without the promise a test
+  awaits a task that returns immediately and asserts before the renewal lands.
+- **`apps/user/Dockerfile` must copy every shared package's manifest *and*
+  source.** Forgetting the source fails the build with "Module not found";
+  forgetting the manifest fails `npm ci`, because the lockfile names a member
+  whose package.json is absent. There are three shared packages now —
+  `api-client`, `session`, `ui` — and each needs both lines.
+- **`packages/ui` is the shared design system, and it imports nothing from
+  `@fixmate/session`.** The shell takes `identity`, `abilities`, `sections` and
+  `onSignOut` as props. That keeps the design system free of session opinions,
+  makes the components testable without a session, and leaves the session layer
+  free of opinions about headers. Each application wires the two together in one
+  small file (`apps/user/app/dashboard-shell.tsx`); the other three are copies
+  with three values changed.
+- **The `@source` path in `globals.css` is three levels up and fails silently.**
+  `@source '../../../packages/ui/src'` — resolved against `apps/user/app/`, not
+  the workspace root. Two levels resolves to `apps/packages/ui`, which does not
+  exist, and **Tailwind ignores a missing source with no warning**: the build
+  succeeds and every class in the shell is simply absent. `apps/user/Dockerfile`
+  therefore greps the compiled CSS for `max-w-5xl`, a class only `packages/ui`
+  uses, so the image build fails instead of shipping an unstyled shell.
+- **Tailwind does not follow the workspace symlink.** `@fixmate/ui` is reached
+  through `node_modules/@fixmate/ui`, and Tailwind's scanner does not follow it,
+  so the `@source` line is required rather than an optimisation.
+- **Rendering the raw account type is a bug, and was one.** The back end's `me`
+  answers `account_type: "users"` because that is what it routes on. Putting that
+  on screen produced "Signed in as users"; `accountTypeLabel` in `@fixmate/ui`
+  maps the four to the back end's own `AccountType::label()` strings, and a test
+  asserts all four line up. Unknown values pass through rather than blanking —
+  "signed in as whatever-this-is" is reportable, an empty header is not.
+- **Navigation is filtered by ability, and the filter is a courtesy, not the
+  control.** `EnsureAccountCan` is the control. `apps/user` deliberately lists an
+  `accounts:read` section that a `users:*` token cannot reach, so the filter is
+  proven to run on that application rather than passing because the list happened
+  to contain nothing restricted. If abilities cannot be read they stay empty,
+  which fails closed.
+- **Component tests need `afterEach(cleanup)` written out.** Testing Library
+  registers it only when vitest's `globals` are on, and `packages/ui` turns them
+  off deliberately. Without it, renders accumulate and `getByRole` fails with
+  "found multiple elements", which reads like a component bug.
+- **jsdom, not happy-dom, for component tests.** The `@testing-library`
+  accessibility queries rely on the accessibility tree; a partial implementation
+  answers "is this a link?" wrongly often enough that a green suite would mean
+  nothing.
+- **Tab order follows visual order, so sign-out is reached before the
+  navigation.** Asserted as a whole sequence rather than "the button is
+  focusable", because a shell that skipped the navigation passes the weaker test.
+- **Verified rather than assumed:** Lighthouse accessibility 1.0 on the sign-in
+  screen and on the shell, no horizontal overflow at a 200% root font size, a
+  correct `viewport` meta, and sign-out clearing storage and landing on
+  `/sign-in/` with no "session ended" message — a deliberate sign-out is silent.
+- **The sign-in response schema validates `renewal_token` and both expiries.**
+  Without them a sign-in that returned no way to renew would produce a session
+  that ends for no visible reason, and the symptom is very hard to trace.
+  `signInResponse` keeps the historical `token` key while the renewal route is
+  explicit about `access_token`; that asymmetry is deliberate.
 - **A front end must not reword a refusal.** `describeSignInFailure` passes the
   back end's message through verbatim and rewrites only the two cases where the
   back end said nothing (`network`, `contract`). The sign-in refusal is

@@ -1,21 +1,28 @@
-import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
-import './globals.css';
+import { Providers } from './providers'
+import type { ReactNode } from 'react'
+import './globals.css'
 
-export const metadata: Metadata = {
+export const metadata = {
     title: 'FixMate',
     description: 'The FixMate end user application.',
-};
+}
 
 /**
- * The root layout. `<html>` and `<body>` are rendered here rather than in a
- * page, because a static export has exactly one HTML document per route and
- * Next.js requires both elements to be present in the layout that wraps them.
+ * The root layout: a server component, because `metadata` can only be exported
+ * from one.
+ *
+ * `Providers` is the client boundary, and it has to be a separate file - see its
+ * docblock for the Next.js constraint that forces it. The session restore lives
+ * in there rather than here for the same reason: the access token is in memory,
+ * so every page has to restore it on arrival, and the one place that cannot be
+ * forgotten is the layout wrapping all of them.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
     return (
         <html lang="en">
-            <body className="min-h-screen">{children}</body>
+            <body className="min-h-screen">
+                <Providers>{children}</Providers>
+            </body>
         </html>
-    );
+    )
 }

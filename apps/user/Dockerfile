@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# The end user application image.
+# The FixMate user application image.
 #
 # A static export served by nginx. There is no Node process at runtime, no
 # application server, and no source tree in the image - which is the whole
@@ -20,9 +20,9 @@
 # host tree built for a different platform.
 #
 # The other three applications have their own copy of this file, in their own
-# directory, and differ only in the two ARG values below. They are separate
-# images that are built, tagged, pushed, deployed and rolled back separately;
-# see apps/README.md for why they are not one image with a flag.
+# directory, and differ only in the values below. They are separate images that
+# are built, tagged, pushed, deployed and rolled back separately; see
+# apps/README.md for why they are not one image with a flag.
 
 ARG NODE_VERSION=24
 
@@ -35,9 +35,9 @@ ARG NODE_VERSION=24
 # release record already makes by treating all five versions as a set.
 #
 # NO DEFAULT, deliberately. Omitting `--build-arg` therefore arrives in the
-# build stage as an empty string, and `lib/api.ts` throws on an empty string
-# rather than falling back to the local address it uses for a host build. A
-# default here would produce an image that starts, reports healthy, and points
+# build stage as an empty string, and `resolveApiBaseUrl` throws on an empty
+# string rather than falling back to the local address it uses for a host build.
+# A default here would produce an image that starts, reports healthy, and points
 # every person who uses it at `localhost`.
 ARG NEXT_PUBLIC_API_URL
 
@@ -71,20 +71,30 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 COPY package.json package-lock.json ./
 COPY apps/user/package.json ./apps/user/
 COPY packages/api-client/package.json ./packages/api-client/
+COPY packages/session/package.json ./packages/session/
+COPY packages/ui/package.json ./packages/ui/
 
 RUN npm ci
 
 COPY apps/user ./apps/user
 
-# The API client, from source. Its package.json points `main` and `types` at
-# `./src/index.ts`, so Next.js compiles it as part of this build rather than
-# consuming a build artefact - which is why there is no build step for it here.
+# The shared packages, from source. Each package.json points `main` and `types`
+# at `./src/index.ts`, so Next.js compiles them as part of this build rather
+# than consuming a build artefact - which is why there is no build step for them
+# here.
 #
-# `src/generated` comes along with it and is the reason the pipeline has to
-# generate the client before building this image. See the note on that line in
-# .dockerignore: the API image cannot generate it (it installs --no-dev, and
+# `api-client/src` comes along with `src/generated` and is the reason the pipeline
+# has to generate the client before building this image. See the note on that line
+# in .dockerignore: the API image cannot generate it (it installs --no-dev, and
 # wayfinder is a dev dependency), so nothing else in this repository can either.
+#
+# A new shared package has to be added in both places - the manifest copy above
+# and the source copy here. Forgetting the second fails the build with a
+# "Module not found" naming the package, which is loud; forgetting the first
+# fails `npm ci`, because the lockfile names a member whose manifest is absent.
 COPY packages/api-client/src ./packages/api-client/src
+COPY packages/session/src ./packages/session/src
+COPY packages/ui/src ./packages/ui/src
 
 # This application's own build, not the root `npm run build`. The root script
 # begins with `php artisan api-client:generate`, and there is deliberately no
@@ -93,6 +103,20 @@ COPY packages/api-client/src ./packages/api-client/src
 RUN npm run build --workspace=@fixmate/user-app \
     && test -f apps/user/out/index.html \
     || (echo "the build produced no out/index.html" >&2; exit 1)
+
+# Assert the shared package's classes reached the compiled CSS.
+#
+# Tailwind finds the classes it generates by scanning source, and it reaches
+# `@fixmate/ui` only through the `@source` line in globals.css - a relative path
+# resolved against that file. A path one level short resolves to a directory that
+# does not exist, and Tailwind ignores a missing source **in silence**: the build
+# succeeds, the shell renders, and every class in it is missing. That is not a
+# failed build, it is an unstyled application that looks deployed.
+#
+# So the build checks. `max-w-5xl` is used only in packages/ui, which makes it a
+# fair witness: if the shell's classes are being generated, it is in the output.
+RUN grep -rq 'max-w-5xl' apps/user/out/_next/static/ \
+    || (echo "the shared package's Tailwind classes are missing from the build; check the @source path in apps/user/app/globals.css" >&2; exit 1)
 
 # ---------------------------------------------------------------------------
 # Stage 2 - Serve it
