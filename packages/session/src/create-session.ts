@@ -29,6 +29,18 @@ export function createSession(options: SessionOptions): Session {
     const { operations, store, tokens } = options
     const now = options.now ?? (() => Date.now())
     const renewBeforeExpiryMs = options.renewBeforeExpiryMs ?? 60_000
+    const idleTimeoutMs = options.idleTimeoutMs ?? 0
+
+    /**
+     * When somebody last used the page, or null if nobody has.
+     *
+     * Null rather than `now()` on load, so a session restored from a stored
+     * renewal token starts its idle clock at the moment it was established rather
+     * than inheriting a timestamp from a previous page load. A person who reloads
+     * a page they were actively using has been active, and the restore itself is
+     * the evidence of that.
+     */
+    let lastActivityAt: number | null = null
 
     const schedule =
         options.schedule ??
@@ -44,6 +56,7 @@ export function createSession(options: SessionOptions): Session {
     let account: SessionAccount | null = null
     let restoring: Promise<boolean> | null = null
     let cancelScheduledRenewal: (() => void) | null = null
+    let cancelScheduledIdleCheck: (() => void) | null = null
     const listeners = new Set<(state: SessionState, reason: SessionEndReason | null) => void>()
 
     const heldRenewalToken = (): string | null =>
@@ -61,6 +74,60 @@ export function createSession(options: SessionOptions): Session {
     const cancelRenewal = () => {
         cancelScheduledRenewal?.()
         cancelScheduledRenewal = null
+    }
+
+    /**
+     * Arrange for the session to end if nobody comes back before the deadline.
+     *
+     * A separate schedule from the renewal rather than a check inside the renewal
+     * callback, for one reason: the two deadlines are different lengths. Renewal
+     * happens a minute before a fifteen-minute token runs out; the idle deadline is
+     * ten minutes. Checking idleness only when a renewal came due would mean the
+     * sign-out happening somewhere between ten and twenty-four minutes after the
+     * last click, which is not a deadline anybody could describe to a user.
+     *
+     * Ends the session **locally only** — the renewal token is discarded from this
+     * browser but nothing is revoked at the back end. That is deliberate. Revoking
+     * is what signing out does, and it revokes *every* token the account holds, so
+     * an idle timeout on one tab would sign a person out of the application they
+     * are actively working in on another. An unattended device stops being signed
+     * in, which is what the rule is for; a stolen renewal token stays usable until
+     * it expires on its own, which is the smaller problem and the one the token's
+     * lifetime already bounds.
+     */
+    const scheduleIdleCheck = () => {
+        cancelIdleCheck()
+
+        // Disabled by default rather than defaulted to a number. A caller that has
+        // not asked for the rule does not get it, so this cannot surprise an
+        // application that measured its own behaviour against the old timer-only
+        // renewal and suddenly finds people being signed out.
+        if (idleTimeoutMs <= 0 || state !== 'signed-in' || lastActivityAt === null) {
+            return
+        }
+
+        cancelScheduledIdleCheck = schedule(lastActivityAt + idleTimeoutMs, () => {
+            // A late-firing timer is the normal case, not an edge case: a
+            // backgrounded tab has its timers throttled and a sleeping machine
+            // fires them all on wake. So the deadline is not compared against
+            // `runAt` here — this runs whenever it runs, and being late only makes
+            // the deadline more certainly past.
+            //
+            // There is deliberately no re-check of the clock against
+            // `lastActivityAt`. There was one, and mutation testing showed no test
+            // could tell the two apart: `cancelIdleCheck` guarantees the only timer
+            // that can reach this line was armed for the current `lastActivityAt`,
+            // so it cannot fire early. A guard nothing can fail is a guard that
+            // reads as protection and is not, so it is gone rather than commented.
+            if (lastActivityAt !== null) {
+                forget('idle')
+            }
+        })
+    }
+
+    const cancelIdleCheck = () => {
+        cancelScheduledIdleCheck?.()
+        cancelScheduledIdleCheck = null
     }
 
     /**
@@ -148,6 +215,22 @@ export function createSession(options: SessionOptions): Session {
     const establish = async (): Promise<void> => {
         await readAccount()
         publish('signed-in', null)
+
+        // The clock starts when the session is established, and only if it is not
+        // already running. Setting it unconditionally would reset the idle deadline
+        // on every successful renewal — so a person who walked away would have the
+        // clock restarted by the renewal that was about to sign them out, and the
+        // session would live for as long as the tab stayed open. That is the exact
+        // failure this rule exists to prevent, and it is invisible from the outside
+        // because renewals keep succeeding.
+        if (lastActivityAt === null) {
+            lastActivityAt = now()
+        }
+
+        // Armed *after* publishing, because `scheduleIdleCheck` reads the state and
+        // the state is only 'signed-in' from here. Arming it before would check a
+        // session that does not exist yet and silently schedule nothing.
+        scheduleIdleCheck()
     }
 
     /**
@@ -159,6 +242,14 @@ export function createSession(options: SessionOptions): Session {
      */
     const forget = (reason: SessionEndReason) => {
         cancelRenewal()
+        // Every path out of a session goes through here, so this is the one place
+        // the idle deadline has to be cancelled. Leaving it armed would let a timer
+        // fire for a session that had already ended and call `forget` a second
+        // time, publishing a second 'signed-out' to whoever is observing — a sign-in
+        // screen would be told the session ended twice, the second time for a
+        // session that was already gone.
+        cancelIdleCheck()
+        lastActivityAt = null
         tokens.set(null)
         accessTokenExpiresAt = null
         store.clear()
@@ -222,6 +313,18 @@ export function createSession(options: SessionOptions): Session {
         accessToken: () => tokens.get(),
         accessTokenExpiresAt: () => accessTokenExpiresAt,
         account: () => account,
+
+        noteActivity() {
+            // Ignored while there is no session. Recording activity on the sign-in
+            // screen would arm a deadline for a session that does not exist, and the
+            // person would be "active" on the page where they are not yet signed in.
+            if (state !== 'signed-in') {
+                return
+            }
+
+            lastActivityAt = now()
+            scheduleIdleCheck()
+        },
 
         restore() {
             // Not started twice. Two concurrent renewals would spend the same

@@ -467,6 +467,44 @@ never enter an image layer.
 - **A scheduled renewal returns its promise** so a test can await it. It is
   `void`-ed by a real timer and by nothing else; without the promise a test
   awaits a task that returns immediately and asserts before the renewal lands.
+- **A session expires on a timer, and a timer fires whether or not anybody is
+  there.** The idle rule (`SessionOptions.idleTimeoutMs`, off unless asked for) is
+  the only thing standing between an open tab on an unattended machine and a
+  session that renews all day. Two things about it are easy to get wrong:
+  - **`establish()` must not reset the idle clock on renewal.** It sets
+    `lastActivityAt` only when it is `null`. Resetting it unconditionally means a
+    renewal restarts the deadline, so a person who walked away is kept alive by the
+    renewal that was about to sign them out — and every renewal *succeeds*, so the
+    session looks healthy the whole time.
+  - **Idle sign-out is local only.** It discards the renewal token from this
+    browser and revokes nothing. Revoking is what `signOut()` does, and it revokes
+    *every* token the account holds — so an idle timeout on one tab would sign
+    somebody out of the application they are working in on another.
+- **`noteActivity()` is called from discrete events only** — `pointerdown`,
+  `keydown`, `wheel`, `touchstart` — and never `mousemove`, `scroll` or
+  `visibilitychange`. Each of the three excluded ones can be produced by a machine
+  with nobody in front of it, and any of them would hold a session open on exactly
+  the unattended device the rule exists to catch.
+- **A session test stub must return what the *operations* layer returns, not the
+  `{ data: ... }` envelope the HTTP client wraps it in.** `createSession` reads
+  `result.token` and `renewed.access_token` directly. A stub returning the wrapped
+  shape sets `undefined` and `Date.parse(undefined)` = `NaN`, which schedules
+  nothing at all — so the renewal never renews, and any test about surviving a
+  renewal passes without one having happened. Every test in
+  `idle-sign-out.test.ts` was green for that reason until it was found.
+- **A fake scheduler must run due callbacks in `runAt` order, not insertion
+  order,** and a fake renewal must return a *later* expiry each time. Both bugs
+  hid the same thing: a renewal that rescheduled itself into the past ran over and
+  over and never let the idle check be reached. `runScheduled` throws rather than
+  hitting a bound, because a silently-truncated loop is a green test.
+- **Mutation testing is what found most of the above.** Six mutations were applied
+  to the idle rule; the first version of the suite caught one. Two guards were
+  genuinely redundant — the idle callback's clock re-read, and the second layer of
+  `noteActivity`'s state check — and the first was removed rather than kept with a
+  comment claiming it protected something. `forget()`'s cancellation of the idle
+  check is only observable when the session ends by *signing out* or by a *failed
+  renewal*; when the idle check is what ends the session, the harness has already
+  dequeued it and the cancellation changes nothing a test can see.
 - **`apps/user/Dockerfile` must copy every shared package's manifest *and*
   source.** Forgetting the source fails the build with "Module not found";
   forgetting the manifest fails `npm ci`, because the lockfile names a member

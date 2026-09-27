@@ -35,6 +35,18 @@ export type SessionEndReason =
     | 'expired'
     /** The back end refused the renewal, e.g. the account was suspended. */
     | 'refused'
+    /**
+     * The session was ended locally after a period with nobody using the page.
+     *
+     * Distinct from `expired` because the two need different words. `expired` means
+     * the credential ran out and the person should come back; `idle` means the
+     * same thing happened deliberately, and a message about a token expiring would
+     * be technically true and would not explain why a page they were looking at
+     * suddenly signed them out.
+     *
+     * Also distinct from `signed-out`, which is the one the person asked for.
+     */
+    | 'idle'
 
 /** The account type an application is, which decides which door it uses. */
 export type AccountKind = 'user' | 'worker' | 'admin' | 'super-admin'
@@ -113,6 +125,24 @@ export interface SessionOptions {
      */
     schedule?: (runAt: number, task: () => void | Promise<void>) => () => void
     onError?: (error: unknown) => void
+    /**
+     * How long a session may sit with nobody using the page before it ends, in
+     * milliseconds. Zero or absent disables the rule.
+     *
+     * The rule exists because renewing on a timer alone does not produce one. A
+     * timer fires whether or not anybody is there, so an open tab on a machine
+     * nobody is sitting at keeps minting access tokens all day — which is the
+     * opposite of what a person closing a laptop at a café is relying on when they
+     * think they have signed out.
+     *
+     * **It must be shorter than the access token's own lifetime.** If it is longer,
+     * the token expires first and the person watching the page sees failed
+     * requests and a shell that still claims to be signed in, rather than the
+     * sign-in screen this is meant to produce. The default is ten minutes against
+     * a fifteen-minute token, and {@link SessionOptions.idleTimeoutMs} says so
+     * where somebody changing it will read it.
+     */
+    idleTimeoutMs?: number
 }
 
 /**
@@ -156,6 +186,19 @@ export interface Session {
     signIn(email: string, password: string): Promise<void>
     /** End the session here and, by revoking, in the other three applications. */
     signOut(): Promise<void>
+    /**
+     * Record that somebody is using the page, and push the idle deadline back.
+     *
+     * Called by the application on real interaction. The session layer cannot
+     * listen for itself: it has no window, and what makes a browser event
+     * meaningful is that a person caused it. A `mousemove` listener in here would
+     * keep a session alive on a machine where a window happened to be jostled,
+     * which is the opposite of the guarantee.
+     *
+     * Safe to call as often as the application likes, and cheap — a number
+     * assignment and a reschedule.
+     */
+    noteActivity(): void
     /** Observe state changes. Returns the function that stops observing. */
     subscribe(listener: (state: SessionState, reason: SessionEndReason | null) => void): () => void
 }

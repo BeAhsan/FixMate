@@ -16,6 +16,7 @@ import {
 import { createAccessTokenSource } from '../access-token-source'
 import { createApplicationClient, operationsFor, type ApplicationKey } from '../application-operations'
 import { createSession, type Session, type SessionEndReason, type SessionState } from '../index'
+import { reportUserActivity } from './report-user-activity'
 import { webStorageRenewalTokenStore } from '../renewal-token-store'
 import { describeSignInFailure, type SignInFailure } from '../sign-in-failure'
 
@@ -121,9 +122,17 @@ export function createApplication(definition: ApplicationDefinition): Applicatio
                 }
             })
 
+            // Real interaction feeds the session's idle deadline. In its own effect
+            // so it is attached once for the provider's life and detached on
+            // unmount, rather than being tied to the restore above — a listener
+            // re-attached on every state change would be a listener attached
+            // several times over.
+            const stopReporting = reportUserActivity(session)
+
             return () => {
                 cancelled = true
                 stop()
+                stopReporting()
             }
         }, [])
 
