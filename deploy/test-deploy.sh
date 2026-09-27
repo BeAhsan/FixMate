@@ -236,5 +236,166 @@ for needed in 'status" = "2"' 'never reported healthy' 'exited during startup'; 
 done
 
 # ---------------------------------------------------------------------------
+group 'reading the release history'
+
+# The history is blocks: a `--- <timestamp>` line then the five component lines.
+# It has to be parsed as blocks. The previous script found the previous release
+# with `grep -v "^${CURRENT}$" | tail -1`, and on a five-line record that pattern
+# spans five lines, matches nothing, and yields an arbitrary line - which then
+# gets handed to compose as an image name. It failed quietly, which is the worst
+# way for a rollback to fail.
+HISTORY_FILE="$(mktemp)"
+trap 'rm -f "$HISTORY_FILE"' EXIT
+
+cat > "$HISTORY_FILE" <<'HISTORY'
+--- 2026-01-01T00:00:00Z
+app=r/app:1
+user-app=r/user-app:1
+worker-app=r/worker-app:1
+admin-app=r/admin-app:1
+super-admin-app=r/super-admin-app:1
+--- 2026-01-02T00:00:00Z
+app=r/app:2
+user-app=r/user-app:2
+worker-app=r/worker-app:2
+admin-app=r/admin-app:2
+super-admin-app=r/super-admin-app:2
+--- 2026-01-03T00:00:00Z
+app=r/app:3
+user-app=r/user-app:3
+worker-app=r/worker-app:3
+admin-app=r/admin-app:3
+super-admin-app=r/super-admin-app:3
+HISTORY
+
+[ "$(history_count)" = "3" ] && ok "three releases on record" || bad "history_count" "3" "$(history_count)"
+
+newest="$(history_set_at 1)"
+[ "$(printf '%s\n' "$newest" | grep -c '=')" = "5" ] \
+    && ok "the newest block holds all five components" \
+    || bad "newest block" "5 lines" "$(printf '%s\n' "$newest" | grep -c '=') lines"
+
+printf '%s\n' "$newest" | grep -q '^app=r/app:3$' \
+    && ok "the newest block is the last one" || bad "newest" "app=r/app:3" "$(printf '%s\n' "$newest" | grep '^app=')"
+
+previous="$(history_set_at 2)"
+printf '%s\n' "$previous" | grep -q '^app=r/app:2$' \
+    && ok "one back is the second release" || bad "previous" "app=r/app:2" "$(printf '%s\n' "$previous" | grep '^app=')"
+
+third="$(history_set_at 3)"
+printf '%s\n' "$third" | grep -q '^app=r/app:1$' \
+    && ok "two back is the first release" || bad "third" "app=r/app:1" "$(printf '%s\n' "$third" | grep '^app=')"
+
+# A block must never include the `---` line that delimits it, or the separator
+# would be handed to compose as a component name.
+for n in 1 2 3; do
+    printf '%s\n' "$(history_set_at $n)" | grep -q '^--- ' \
+        && bad "block $n is free of separators" "no '--- ' line" "found one" \
+        || ok "block $n is free of separators"
+done
+
+# Asking for a release that does not exist must fail, not return the last one.
+# Returning something plausible is how a rollback silently becomes a no-op.
+if history_set_at 4 >/dev/null 2>&1; then
+    bad "history_set_at 4" "to fail" "it returned a value"
+else
+    ok "asking for a fourth release fails rather than repeating the third"
+fi
+
+# An empty or absent history must not produce a block.
+: > "$HISTORY_FILE"
+if history_set_at 1 >/dev/null 2>&1; then
+    bad "empty history" "to fail" "it returned a value"
+else
+    ok "an empty history yields nothing"
+fi
+
+# ---------------------------------------------------------------------------
+group 'applying a recorded set'
+
+# Every component in a recorded set must reach its own compose variable. A
+# mapping that misses one is how a rollback restores four front ends and quietly
+# leaves the fifth on the new version - the exact failure a set record exists to
+# prevent. So this asserts the variable, not just the text.
+RECORD='app=r/app:9
+user-app=r/user-app:9
+worker-app=r/worker-app:9
+admin-app=r/admin-app:9
+super-admin-app=r/super-admin-app:9'
+
+(
+    use_release_set "$RECORD" >/dev/null 2>&1
+    for pair in "APP_IMAGE r/app:9" \
+                "USER_APP_IMAGE r/user-app:9" \
+                "WORKER_APP_IMAGE r/worker-app:9" \
+                "ADMIN_APP_IMAGE r/admin-app:9" \
+                "SUPER_ADMIN_APP_IMAGE r/super-admin-app:9"; do
+        var="${pair%% *}"; want="${pair#* }"
+        got="${!var:-}"
+        [ "$got" = "$want" ] || { printf '  \033[31mFAIL\033[0m %s is "%s", expected "%s"\n' "$var" "$got" "$want"; exit 1; }
+    done
+    printf '  \033[32mok\033[0m   all five images reach their own compose variable\n'
+) && pass=$((pass + 1)) || fail=$((fail + 1))
+
+# A record that is not a set must be refused loudly. Treating a bare string as an
+# image name is the failure the old rollback script had.
+#
+# Each is run in its own subshell and judged by its exit status. `die` calls
+# `exit`, so inside a subshell it takes the *whole subshell* down - a test that
+# printed its verdict after the call would print nothing at all on the very cases
+# it exists to check, and would look like a crash rather than a pass.
+if ( use_release_set "r/app:1.4.0" ) >/dev/null 2>&1; then
+    bad "a bare image string" "to be refused" "it was accepted"
+else
+    ok "a bare image string is refused rather than half-applied"
+fi
+
+if ( use_release_set "" ) >/dev/null 2>&1; then
+    bad "an empty record" "to be refused" "it was accepted"
+else
+    ok "an empty record is refused"
+fi
+
+# ---------------------------------------------------------------------------
+group 'the sibling scripts parse, under the shell the VPS has'
+
+# rollback.sh and status.sh are part of the deploy path and are written in bash,
+# so a syntax error in either is a deploy-path failure. They are checked here
+# rather than only in review because nothing else in either CI gate ever loads
+# them. `bash -n` does not execute, so this needs nothing but the interpreter.
+for sibling in rollback.sh status.sh; do
+    path="${SCRIPT_DIR}/${sibling}"
+    if [ ! -f "$path" ]; then
+        bad "${sibling} exists" "the file" "missing"
+        continue
+    fi
+    if bash -n "$path" 2>/dev/null; then
+        ok "${sibling} parses"
+    else
+        bad "${sibling} parses" "no syntax error" "$(bash -n "$path" 2>&1 | head -1)"
+    fi
+done
+
+# They source deploy.sh rather than copying from it. A copy of the
+# component-to-variable mapping is how the two drift, and the drift is invisible
+# until a rollback restores the wrong front ends.
+for sibling in rollback.sh status.sh; do
+    if grep -q 'FIXMATE_SOURCE_ONLY=1 . "${SCRIPT_DIR}/deploy.sh"' "${SCRIPT_DIR}/${sibling}"; then
+        ok "${sibling} sources deploy.sh instead of copying it"
+    else
+        bad "${sibling} reuses deploy.sh" "FIXMATE_SOURCE_ONLY source" "not found"
+    fi
+done
+
+# And the source guard has to be a return, not an exit. An `exit` there would
+# take the sourcing script down with it, so `bash rollback.sh` would work and
+# sourcing would silently kill the caller.
+guard_line="$(grep -n 'FIXMATE_SOURCE_ONLY' "$DEPLOY_SCRIPT" | head -1 | cut -d: -f1)"
+next_few="$(sed -n "$((guard_line + 1)),$((guard_line + 2))p" "$DEPLOY_SCRIPT" | tr -d '[:space:]')"
+[ "$next_few" = "return0fi" ] \
+    && ok "the source guard returns rather than exits" \
+    || bad "the source guard" "return 0 / fi" "got: $next_few"
+
+# ---------------------------------------------------------------------------
 printf '\n\033[1m%d passed, %d failed\033[0m\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

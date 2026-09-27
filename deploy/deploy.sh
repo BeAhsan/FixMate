@@ -196,17 +196,17 @@ load_previous() {
     IMAGE="$saved"
 }
 
-# Restore a recorded set. Every image, not just the app's: a back end that
-# rolled back alone would be served by front ends built against a contract it no
-# longer has, and nobody could sign in. That is the entire reason the record is a
-# set rather than a string.
-rollback_to() {
-    local recorded="$1" component name value
+# Turn a recorded set into the five exported variables compose reads.
+#
+# Kept as its own function rather than inline in rollback_to, because
+# deploy/rollback.sh needs the identical mapping and a second copy is how the two
+# drift - at which point a manual rollback quietly restores some front ends and
+# not others, which is the exact failure the set record exists to prevent.
+use_release_set() {
+    local recorded="$1" name value found=""
 
-    warn "Restoring the previously recorded set"
-    if ! printf '%s' "$recorded" | grep -q '='; then
-        die "The recorded release is not a set and cannot be restored automatically. Intervene manually."
-    fi
+    printf '%s' "$recorded" | grep -q '=' \
+        || die "The release record is not a set and cannot be applied automatically. Intervene manually."
 
     while IFS='=' read -r name value; do
         [ -n "$name" ] || continue
@@ -218,10 +218,21 @@ rollback_to() {
             super-admin-app)   export SUPER_ADMIN_APP_IMAGE="$value" ;;
             *) warn "Ignoring unknown component '${name}' in the release record" ;;
         esac
-        component="$name"
+        found="$name"
     done <<< "$recorded"
 
-    [ -n "${component:-}" ] || die "The release record is empty. Intervene manually."
+    [ -n "$found" ] || die "The release record is empty. Intervene manually."
+}
+
+# Restore a recorded set. Every image, not just the app's: a back end that
+# rolled back alone would be served by front ends built against a contract it no
+# longer has, and nobody could sign in. That is the entire reason the record is a
+# set rather than a string.
+rollback_to() {
+    local recorded="$1"
+
+    warn "Restoring the previously recorded set"
+    use_release_set "$recorded"
 
     if ! docker compose -f "$COMPOSE_FILE" up -d --remove-orphans; then
         die "Rollback also failed. Intervene manually."
@@ -237,6 +248,34 @@ rollback() {
         return 0
     fi
     rollback_to "$(load_previous)"
+}
+
+# The release history is a sequence of blocks: a `--- <timestamp>` line followed by
+# the five `component=image` lines of that release. Blocks are parsed, never
+# pattern-matched as loose text.
+#
+# The old script found the previous release with `grep -v "^${CURRENT}$" | tail -1`,
+# which cannot work on a multi-line record: the pattern spans five lines, so it
+# matches nothing, the "previous" release came back as an arbitrary line, and
+# `APP_IMAGE="$PREVIOUS"` handed compose a five-line string as an image name. It
+# failed quietly, which is the worst way for a rollback to fail.
+#
+# history_set_at N prints the Nth block counting back from the newest, so 1 is the
+# most recent and 2 is the one to roll back to.
+history_set_at() {
+    awk -v want="$1" '
+        /^--- / { n++; next }
+        { if (n > 0) body[n] = body[n] $0 "\n" }
+        END {
+            idx = n - want + 1
+            if (n == 0 || idx < 1) exit 1
+            printf "%s", body[idx]
+        }
+    ' "$HISTORY_FILE"
+}
+
+history_count() {
+    grep -c '^--- ' "$HISTORY_FILE" 2>/dev/null || true
 }
 
 # Wait for one component, and say which one.
