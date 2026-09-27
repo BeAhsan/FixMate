@@ -37,12 +37,40 @@ class AppServiceProvider extends ServiceProvider
     ];
 
     /**
+     * The account types, and the reset-link limiter each one is reached through.
+     *
+     * A reset-link request is throttled for the same reasons a sign-in is, and
+     * with the same separation: the two endpoints in each application are doors
+     * into one store, and counting them in one bucket would mean a flood at one
+     * of them stops the person using the other. The broker also throttles per
+     * address underneath this; the two are not alternatives, and the one here is
+     * the one that keeps four stores from sharing a count.
+     *
+     * @var array<string, string>
+     */
+    public const PASSWORD_RESET_LIMITERS = [
+        'users' => 'password-reset.users',
+        'workers' => 'password-reset.workers',
+        'admins' => 'password-reset.admins',
+        'super_admins' => 'password-reset.super-admins',
+    ];
+
+    /**
      * Fallbacks for the sign-in rate limit, used only if the configuration is
      * missing. The configured values in config/auth.php are the real ones.
      */
     private const LOGIN_MAX_ATTEMPTS = 5;
 
     private const LOGIN_DECAY_MINUTES = 1;
+
+    /**
+     * Fallbacks for the reset-link rate limit, used only if the configuration is
+     * missing. The configured values in config/password-reset.php are the real
+     * ones.
+     */
+    private const PASSWORD_RESET_MAX_ATTEMPTS = 5;
+
+    private const PASSWORD_RESET_DECAY_MINUTES = 1;
 
     /**
      * Register any application services.
@@ -76,6 +104,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureLoginRateLimiters();
+        $this->configurePasswordResetRateLimiters();
     }
 
     /**
@@ -100,8 +129,44 @@ class AppServiceProvider extends ServiceProvider
         foreach (self::LOGIN_LIMITERS as $limiter) {
             RateLimiter::for($limiter, function (Request $request) use ($maxAttempts, $decayMinutes): Limit {
                 return Limit::perMinute($maxAttempts, $decayMinutes)
-                    ->by($this->loginThrottleKey($request))
-                    ->response($this->throttledResponse(...));
+                    ->by($this->throttleKey($request))
+                    ->response(function (Request $request, array $headers): JsonResponse {
+                        return $this->throttledResponse(
+                            $request,
+                            $headers,
+                            'Too many sign-in attempts. Please wait '
+                                .$this->humaniseWait((int) ($headers['Retry-After'] ?? 0)).' before trying again.',
+                        );
+                    });
+            });
+        }
+    }
+
+    /**
+     * Give each account type its own reset-link rate-limit bucket.
+     *
+     * The same separation as sign-in, for the same reason, and one extra: a
+     * shared bucket across the four would let a flood aimed at one store
+     * exhaust the allowance of the person whose own account is in another, and
+     * the address is often the same in both. The broker's own per-address
+     * throttle sits underneath this one and does a different job — it stops one
+     * address being mailed repeatedly — so neither replaces the other.
+     */
+    private function configurePasswordResetRateLimiters(): void
+    {
+        $maxAttempts = (int) config('password-reset.max_attempts', self::PASSWORD_RESET_MAX_ATTEMPTS);
+        $decayMinutes = max(1, (int) config('password-reset.decay_minutes', self::PASSWORD_RESET_DECAY_MINUTES));
+
+        foreach (self::PASSWORD_RESET_LIMITERS as $limiter) {
+            RateLimiter::for($limiter, function (Request $request) use ($maxAttempts, $decayMinutes): Limit {
+                return Limit::perMinute($maxAttempts, $decayMinutes)
+                    ->by($this->throttleKey($request))
+                    ->response(fn (Request $request, array $headers): JsonResponse => $this->throttledResponse(
+                        $request,
+                        $headers,
+                        'Too many password reset requests. Please wait '
+                            .$this->humaniseWait((int) ($headers['Retry-After'] ?? 0)).' before trying again.',
+                    ));
             });
         }
     }
@@ -119,15 +184,17 @@ class AppServiceProvider extends ServiceProvider
      * declared, so the response does not change shape with the environment.
      *
      * The wait is read from the headers the middleware computed, so the message
-     * cannot drift from the behaviour it describes.
+     * cannot drift from the behaviour it describes. The wording is passed in
+     * rather than fixed because the reset endpoints have their own version, and
+     * being told to wait after mistyping a password and being told to wait
+     * after asking for six reset emails are different situations.
      */
-    private function throttledResponse(Request $request, array $headers): JsonResponse
+    private function throttledResponse(Request $request, array $headers, string $message): JsonResponse
     {
         $seconds = (int) ($headers['Retry-After'] ?? 0);
 
         return response()->json([
-            'message' => 'Too many sign-in attempts. Please wait '
-                .$this->humaniseWait($seconds).' before trying again.',
+            'message' => $message,
             'retry_after' => $seconds,
         ], 429, $headers);
     }
@@ -149,16 +216,17 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * The key a failed sign-in attempt is counted against.
+     * The key a throttled attempt is counted against, for both the sign-in and
+     * the reset-link doors.
      *
      * Address plus IP, so that guessing many addresses from one connection is
      * limited, and so that repeatedly guessing one address from many connections
-     * is limited too. Normalised to lower case because the sign-in path is
+     * is limited too. Normalised to lower case because the credential paths are
      * case-insensitive: without this, `Person@Example.com` and
      * `person@example.com` would each get their own allowance, and a case
      * variation would be a way around the limit.
      */
-    private function loginThrottleKey(Request $request): string
+    private function throttleKey(Request $request): string
     {
         $email = $request->input('email');
 

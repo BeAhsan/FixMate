@@ -17,9 +17,13 @@
 */
 
 use App\Http\Controllers\Auth\AdminLoginController;
+use App\Http\Controllers\Auth\AdminPasswordResetController;
 use App\Http\Controllers\Auth\SuperAdminLoginController;
+use App\Http\Controllers\Auth\SuperAdminPasswordResetController;
 use App\Http\Controllers\Auth\UserLoginController;
+use App\Http\Controllers\Auth\UserPasswordResetController;
 use App\Http\Controllers\Auth\WorkerLoginController;
+use App\Http\Controllers\Auth\WorkerPasswordResetController;
 use App\Providers\AppServiceProvider;
 
 // Identity and Access context routes
@@ -55,4 +59,46 @@ Route::prefix('v1/identity')
         Route::post('/super-admins/sign-in', SuperAdminLoginController::class)
             ->middleware('throttle:'.AppServiceProvider::LOGIN_LIMITERS['super_admins'])
             ->name('super-admins.signin');
+
+        // Password reset, one pair of doors per application.
+        //
+        // Each pair belongs to the store its sign-in door belongs to, and the
+        // controller states that in a single line, because it is the only thing
+        // that decides which account a reset changes. The address in the body
+        // never does: a person may hold an account in several stores under one
+        // address, so "which account is this reset for" is answered by the route
+        // and by nothing else.
+        //
+        // Reset-link requests are throttled separately from sign-in, and
+        // separately per account type, for the reasons
+        // AppServiceProvider::configurePasswordResetRateLimiters() gives. The
+        // pair shares one limiter, so flooding one store's reset endpoint does
+        // not lock the same address out of requesting a link in another.
+        Route::post('/users/forgot-password', [UserPasswordResetController::class, 'requestLink'])
+            ->middleware('throttle:'.AppServiceProvider::PASSWORD_RESET_LIMITERS['users'])
+            ->name('users.forgot-password');
+
+        Route::post('/users/reset-password', [UserPasswordResetController::class, 'complete'])
+            ->name('users.reset-password');
+
+        Route::post('/workers/forgot-password', [WorkerPasswordResetController::class, 'requestLink'])
+            ->middleware('throttle:'.AppServiceProvider::PASSWORD_RESET_LIMITERS['workers'])
+            ->name('workers.forgot-password');
+
+        Route::post('/workers/reset-password', [WorkerPasswordResetController::class, 'complete'])
+            ->name('workers.reset-password');
+
+        Route::post('/admins/forgot-password', [AdminPasswordResetController::class, 'requestLink'])
+            ->middleware('throttle:'.AppServiceProvider::PASSWORD_RESET_LIMITERS['admins'])
+            ->name('admins.forgot-password');
+
+        Route::post('/admins/reset-password', [AdminPasswordResetController::class, 'complete'])
+            ->name('admins.reset-password');
+
+        Route::post('/super-admins/forgot-password', [SuperAdminPasswordResetController::class, 'requestLink'])
+            ->middleware('throttle:'.AppServiceProvider::PASSWORD_RESET_LIMITERS['super_admins'])
+            ->name('super-admins.forgot-password');
+
+        Route::post('/super-admins/reset-password', [SuperAdminPasswordResetController::class, 'complete'])
+            ->name('super-admins.reset-password');
     });
