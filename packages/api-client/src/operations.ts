@@ -80,24 +80,72 @@ export interface SignInResult {
     token: string
     user: SignInAccount
     abilities: string[]
+    /**
+     * The renewal token, and the two expiries.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived.
+     * A sign-in that returned a token and no way to renew it would leave the
+     * application holding an access token that silently stops working, and the
+     * symptom — a session that ends for no visible reason — is very hard to
+     * trace back to a missing field.
+     */
+    renewal_token: string
+    access_token_expires_at: string
+    renewal_token_expires_at: string
 }
 
 export interface WorkerSignInResult {
     token: string
     worker: SignInAccount
     abilities: string[]
+    /**
+     * The renewal token, and the two expiries.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived.
+     * A sign-in that returned a token and no way to renew it would leave the
+     * application holding an access token that silently stops working, and the
+     * symptom — a session that ends for no visible reason — is very hard to
+     * trace back to a missing field.
+     */
+    renewal_token: string
+    access_token_expires_at: string
+    renewal_token_expires_at: string
 }
 
 export interface AdminSignInResult {
     token: string
     admin: SignInAccount
     abilities: string[]
+    /**
+     * The renewal token, and the two expiries.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived.
+     * A sign-in that returned a token and no way to renew it would leave the
+     * application holding an access token that silently stops working, and the
+     * symptom — a session that ends for no visible reason — is very hard to
+     * trace back to a missing field.
+     */
+    renewal_token: string
+    access_token_expires_at: string
+    renewal_token_expires_at: string
 }
 
 export interface SuperAdminSignInResult {
     token: string
     super_admin: SignInAccount
     abilities: string[]
+    /**
+     * The renewal token, and the two expiries.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived.
+     * A sign-in that returned a token and no way to renew it would leave the
+     * application holding an access token that silently stops working, and the
+     * symptom — a session that ends for no visible reason — is very hard to
+     * trace back to a missing field.
+     */
+    renewal_token: string
+    access_token_expires_at: string
+    renewal_token_expires_at: string
 }
 
 /** Ask for a password reset link to be sent to an address. */
@@ -180,6 +228,9 @@ const signInResponse: Schema<{ data: SignInResult }> = object({
             email: string(),
         }),
         abilities: array(string()),
+        renewal_token: string(),
+        access_token_expires_at: string(),
+        renewal_token_expires_at: string(),
     }),
 })
 
@@ -197,6 +248,9 @@ const workerSignInResponse: Schema<{ data: WorkerSignInResult }> = object({
             email: string(),
         }),
         abilities: array(string()),
+        renewal_token: string(),
+        access_token_expires_at: string(),
+        renewal_token_expires_at: string(),
     }),
 })
 
@@ -222,6 +276,9 @@ const adminSignInResponse: Schema<{ data: AdminSignInResult }> = object({
         token: string(),
         admin: object(accountFields),
         abilities: array(string()),
+        renewal_token: string(),
+        access_token_expires_at: string(),
+        renewal_token_expires_at: string(),
     }),
 })
 
@@ -230,6 +287,9 @@ const superAdminSignInResponse: Schema<{ data: SuperAdminSignInResult }> = objec
         token: string(),
         super_admin: object(accountFields),
         abilities: array(string()),
+        renewal_token: string(),
+        access_token_expires_at: string(),
+        renewal_token_expires_at: string(),
     }),
 })
 

@@ -1,9 +1,10 @@
 'use client'
 
-import { operations } from '@/lib/api'
+import { useSession } from '@/app/session-provider'
+import { session, type SessionEndReason } from '@/lib/api'
 import { describeSignInFailure, type SignInFailure } from '@/lib/sign-in-failure'
-import { setAccessToken } from '@/lib/session'
-import { type FormEvent, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { type FormEvent, Suspense, useEffect, useState } from 'react'
 
 /**
  * The sign-in screen.
@@ -11,31 +12,61 @@ import { type FormEvent, useState } from 'react'
  * A client component, and it has to be one: the request is made from the
  * browser to the back end, not from a server, because the application is a
  * static export with nothing behind it. The page itself is still prerendered —
- * `next build` writes this HTML to `out/sign-in/index.html` — and the form only
+ * `next build` writes this to `out/sign-in/index.html` — and the form only
  * becomes interactive when the JavaScript beside it loads.
  *
- * Three refusals are told apart on purpose, because they need different things
- * from the person reading them:
+ * Three things happen here that a plain form would not do, and all three are
+ * about a person arriving here rather than choosing to:
  *
- *   - the back end's own message, when it sent one. The sign-in refusal names
- *     neither which part of the credentials was wrong nor whether the address
- *     exists, and a screen that paraphrased it would be saying more than the
- *     back end is willing to.
- *   - "we could not reach the back end", when there was no response at all.
- *     Without this the failure would be a blank screen, which is the one
- *     outcome that tells the person nothing about whether to retry.
- *   - "the response did not match what we expected", when a response arrived
- *     and no longer fitted the declared shape. That is a broken contract rather
- *     than a wrong password, and telling someone to check their password would
- *     be actively misleading.
+ *   - **It restores the session on load.** An access token lives in memory and
+ *     does not survive a reload, so a page load starts by spending the stored
+ *     renewal token for a new one. Somebody who reloads stays signed in; without
+ *     this they would be shown this form on every refresh.
+ *   - **It says why it is here.** A sign-in screen that appears without warning
+ *     reads as though the person was never signed in, or as though something was
+ *     wrong with their account. The session layer knows the difference between a
+ *     session that was ended on purpose and one that expired, and that
+ *     distinction is the whole of what is useful to say here.
+ *   - **It returns them to where they were.** A person sent here from a page
+ *     they were reading should end up back on it, not on their new dashboard.
  *
- * The wording itself is in lib/sign-in-failure.ts rather than here, so that it
- * can be tested without rendering a form.
+ * `useSearchParams` is why this is wrapped in `<Suspense>` at the bottom: during
+ * a static export Next.js prerenders this component, and a hook that reads the
+ * query string has no value to read at that moment.
  */
 export default function SignInPage() {
+    return (
+        <Suspense fallback={<main className="min-h-screen" />}>
+            <SignInForm />
+        </Suspense>
+    )
+}
+
+/**
+ * The form itself, split out so the `Suspense` boundary above can wrap it.
+ */
+function SignInForm() {
+    const router = useRouter()
+    const searchParams = useSearchParams()
+    const next = searchParams.get('next')
+
+    // The restore itself lives in the layout's provider, so it happens on every
+    // page rather than only on this one. This screen only *reacts* to the
+    // outcome.
+    const { state, endedBecause, ready } = useSession()
+
     const [pending, setPending] = useState(false)
     const [failure, setFailure] = useState<SignInFailure | null>(null)
-    const [signedInAs, setSignedInAs] = useState<string | null>(null)
+
+    useEffect(() => {
+        // Already signed in, and not because of anything this page did — most
+        // likely a person who followed a link here while their session was fine.
+        // Sending them onward is less surprising than telling them to sign in
+        // again.
+        if (ready && state === 'signed-in') {
+            router.replace(next ?? '/')
+        }
+    }, [ready, state, next, router])
 
     async function signIn(event: FormEvent<HTMLFormElement>) {
         event.preventDefault()
@@ -45,14 +76,13 @@ export default function SignInPage() {
         setFailure(null)
 
         try {
-            const result = await operations.signInUser({
-                email: String(form.get('email') ?? ''),
-                password: String(form.get('password') ?? ''),
-            })
+            await session.signIn(
+                String(form.get('email') ?? ''),
+                String(form.get('password') ?? ''),
+            )
 
-            // The token goes into memory and nowhere else. See lib/session.ts.
-            setAccessToken(result.token)
-            setSignedInAs(`${result.user.name} <${result.user.email}>`)
+            // Back where they came from, or to the landing page.
+            router.replace(next ?? '/')
         } catch (error) {
             setFailure(describeSignInFailure(error))
         } finally {
@@ -70,22 +100,17 @@ export default function SignInPage() {
                 </p>
             </header>
 
-            {signedInAs !== null ? (
-                <section
-                    data-sign-in-result="ok"
-                    className="flex flex-col gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-6 dark:border-emerald-800 dark:bg-emerald-950"
+            {explanationFor(endedBecause, ready) !== null && (
+                <p
+                    data-session-ended={endedBecause}
+                    role="status"
+                    className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
                 >
-                    <h2 className="font-semibold text-emerald-900 dark:text-emerald-100">
-                        Signed in
-                    </h2>
-                    <p className="text-emerald-800 dark:text-emerald-200">{signedInAs}</p>
-                    <p className="text-sm text-emerald-700 dark:text-emerald-300">
-                        The token is in memory only. Reloading this page signs you out
-                        until the renewal token arrives with ticket 16.
-                    </p>
-                </section>
-            ) : (
-                <form onSubmit={signIn} className="flex flex-col gap-4">
+                    {explanationFor(endedBecause, ready)}
+                </p>
+            )}
+
+            <form onSubmit={signIn} className="flex flex-col gap-4">
                     <label className="flex flex-col gap-1.5">
                         <span className="text-sm font-medium">Email address</span>
                         <input
@@ -125,8 +150,28 @@ export default function SignInPage() {
                             {failure.message}
                         </p>
                     )}
-                </form>
-            )}
+            </form>
         </main>
     )
+}
+
+/**
+ * What to say about a session that has ended, and when to say nothing.
+ *
+ * Nothing is said before the restore has been attempted, because "your session
+ * has ended" is a claim about something we have not established yet — and a
+ * first-time visitor must not be greeted with it.
+ *
+ * `signed-out` is deliberately silent: somebody who pressed "sign out" knows
+ * exactly why they are here, and being told "your session has ended" would read
+ * as a fault.
+ */
+function explanationFor(reason: SessionEndReason | null, ready: boolean): string | null {
+    if (!ready || reason === null || reason === 'signed-out') {
+        return null
+    }
+
+    return reason === 'refused'
+        ? 'Your account cannot be used at the moment. Please contact an administrator.'
+        : 'Your session has ended. Please sign in again.'
 }

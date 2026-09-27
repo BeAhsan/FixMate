@@ -336,10 +336,58 @@ never enter an image layer.
   succeeds and `NEXT_PUBLIC_API_URL` simply is not set. `lib/api.ts` throws at
   module load when the address is missing, which fails `next build` and is the
   only reason this is caught at build time rather than in a browser.
-- **The access token is in a module variable and nowhere else.** Asserted live:
-  after a successful sign-in, `localStorage`, `sessionStorage` and
-  `document.cookie` are all empty. `lib/session.ts` is deliberately incomplete —
-  a reload signs you out until ticket 16 adds the renewal token.
+- **A session is two tokens, and the renewal token is the dangerous one.** The
+  access token is in memory only and expires in minutes; the renewal token is in
+  browser storage, where injected script can read it, so it carries only
+  `session:renew` and is spent on use. A super administrator's renewal token
+  carries no wildcard. `EnsureAccountCan` refuses any token carrying
+  `session:renew` — removing that one line makes a renewal token reach
+  `GET /users/me` with a 200, because that route names no ability and the
+  account-type check alone waves it through. `EnsureSessionCan` is the mirror: it
+  refuses anything that is *not* renewal-scoped, so an access token cannot drive
+  renewal.
+- **`SignOutController` has no `account.can`, and that is load-bearing.**
+  `account.can` refuses renewal tokens, and an expired access token is the
+  normal reason for signing out — so refusing the renewal token there would
+  leave a working one in storage that signs the person straight back in.
+  `ApiDocumentation` reads `session.can` as naming an account type for the same
+  reason: the four renewal doors would otherwise be documented as guarding
+  nothing, which is a false claim in the field a reader trusts.
+- **Sign-out is not idempotent, and must not be made so.** A second attempt is a
+  401, because the token it presents was revoked by the first. Returning 200
+  would mean weakening `auth:sanctum` for one route. The client documents that a
+  caller must treat the 401 as success.
+- **Sign-in issues two tokens, so `assertDatabaseCount('personal_access_tokens', 1)`
+  is wrong and there are several of them.** They were corrected, not deleted.
+- **The session lives in `packages/session`, and its access-token holder is a
+  separate object for a construction-order reason.** The client is built before
+  the session exists, so the token lives in a `createAccessTokenSource()` holder
+  that both read and write. The alternative is a closure over a `let session`
+  that is undefined until two lines later.
+- **`AccessTokenSource.presentAs` is how the renewal token is sent.** A renewal
+  needs a bearer credential and there is no access token at that moment, so the
+  holder temporarily carries the renewal token for the scope of one call and
+  restores it in a `finally`. Setting it without a scope would present a
+  browser-stored token to every later request.
+- **`restore()` with no stored renewal token reports *no* reason, not
+  `expired`.** It is reached on every first page load, so it is the most commonly
+  seen state in the application; calling it an expiry greeted a first-time
+  visitor with "your session has ended". Found by looking at a real page load.
+- **The session provider is in the root layout, not per page.** The access token
+  is in memory, so every page must restore on arrival. With the restore on the
+  sign-in screen alone, reloading the landing page left the person signed out.
+- **A scheduled renewal returns its promise** so a test can await it. It is
+  `void`-ed by a real timer and by nothing else; without the promise a test
+  awaits a task that returns immediately and asserts before the renewal lands.
+- **`apps/user/Dockerfile` must copy every shared package's manifest *and*
+  source.** Forgetting the source fails the build with "Module not found";
+  forgetting the manifest fails `npm ci`, because the lockfile names a member
+  whose package.json is absent.
+- **The sign-in response schema validates `renewal_token` and both expiries.**
+  Without them a sign-in that returned no way to renew would produce a session
+  that ends for no visible reason, and the symptom is very hard to trace.
+  `signInResponse` keeps the historical `token` key while the renewal route is
+  explicit about `access_token`; that asymmetry is deliberate.
 - **A front end must not reword a refusal.** `describeSignInFailure` passes the
   back end's message through verbatim and rewrites only the two cases where the
   back end said nothing (`network`, `contract`). The sign-in refusal is

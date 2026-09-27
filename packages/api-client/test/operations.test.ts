@@ -14,11 +14,23 @@ import { ApiError } from '../src/errors'
 
 const reply = (status: number, body: unknown) => () => new Response(JSON.stringify(body), { status })
 
+/**
+ * A sign-in response, in full.
+ *
+ * The three session fields are not decoration and this fixture is the reason:
+ * they became required when sign-in started issuing a renewal token, and the
+ * schema rejected this fixture until they were added. A front end that treats a
+ * session as one token would have been told here rather than discovering it as a
+ * session that ends for no visible reason.
+ */
 const signInResponse = {
     data: {
         token: 'plain-text-token',
         user: { id: 1, name: 'Ahsan', email: 'ahsan@example.test' },
         abilities: ['users:*'],
+        renewal_token: 'plain-text-renewal-token',
+        access_token_expires_at: '2026-01-01T00:15:00+00:00',
+        renewal_token_expires_at: '2026-01-02T00:00:00+00:00',
     },
 }
 
@@ -48,6 +60,9 @@ describe('signing in as an end user', () => {
             token: 'plain-text-token',
             user: { id: 1, name: 'Ahsan', email: 'ahsan@example.test' },
             abilities: ['users:*'],
+            renewal_token: 'plain-text-renewal-token',
+            access_token_expires_at: '2026-01-01T00:15:00+00:00',
+            renewal_token_expires_at: '2026-01-02T00:00:00+00:00',
         })
     })
 
@@ -68,8 +83,11 @@ describe('signing in as an end user', () => {
     })
 
     it('rejects a response the back end no longer sends in the declared shape', async () => {
-        // The field the front end depends on is gone.
-        const { fetch } = recordingFetch({ data: { token: 't', abilities: [] } })
+        // The field the front end depends on is gone. Built by deleting from a
+        // complete response rather than written short, so this keeps testing
+        // what it says it tests as the sign-in shape gains fields.
+        const { user, ...withoutTheAccount } = signInResponse.data
+        const { fetch } = recordingFetch({ data: { ...withoutTheAccount, user: undefined } })
         const operations = createOperations(client(fetch))
 
         const error = (await operations

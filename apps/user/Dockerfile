@@ -71,20 +71,28 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 COPY package.json package-lock.json ./
 COPY apps/user/package.json ./apps/user/
 COPY packages/api-client/package.json ./packages/api-client/
+COPY packages/session/package.json ./packages/session/
 
 RUN npm ci
 
 COPY apps/user ./apps/user
 
-# The API client, from source. Its package.json points `main` and `types` at
-# `./src/index.ts`, so Next.js compiles it as part of this build rather than
-# consuming a build artefact - which is why there is no build step for it here.
+# The shared packages, from source. Each package.json points `main` and `types`
+# at `./src/index.ts`, so Next.js compiles them as part of this build rather
+# than consuming a build artefact — which is why there is no build step for them
+# here.
 #
-# `src/generated` comes along with it and is the reason the pipeline has to
-# generate the client before building this image. See the note on that line in
-# .dockerignore: the API image cannot generate it (it installs --no-dev, and
+# `api-client/src` comes along with `src/generated` and is the reason the pipeline
+# has to generate the client before building this image. See the note on that line
+# in .dockerignore: the API image cannot generate it (it installs --no-dev, and
 # wayfinder is a dev dependency), so nothing else in this repository can either.
+#
+# A new shared package has to be added in both places — the manifest copy above
+# and the source copy here. Forgetting the second fails the build with a
+# "Module not found" naming the package, which is loud; forgetting the first
+# fails `npm ci`, because the lockfile names a member whose manifest is absent.
 COPY packages/api-client/src ./packages/api-client/src
+COPY packages/session/src ./packages/session/src
 
 # This application's own build, not the root `npm run build`. The root script
 # begins with `php artisan api-client:generate`, and there is deliberately no

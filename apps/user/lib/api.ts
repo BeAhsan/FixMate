@@ -1,51 +1,52 @@
 import { createApiClient, createOperations } from '@fixmate/api-client'
+import {
+    createAccessTokenSource,
+    createSession,
+    webStorageRenewalTokenStore,
+} from '@fixmate/session'
 import { resolveBaseUrl } from './base-url'
-import { getAccessToken } from './session'
 
 /**
- * The one place in this application that knows the back end exists.
+ * The one place in this application that knows the back end exists, and the one
+ * place that knows a session exists.
  *
- * Every request goes through here, and no component calls `fetch`. That is what
- * makes the generated client worth having: the URL for a sign-in is whatever
- * `laravel/wayfinder` read out of `routes/api.php`, so a renamed route fails
- * the build instead of failing in a browser.
+ * Construction order is load-bearing and is the reason the access token lives in
+ * an object rather than inside the session:
  *
- * ## The back end's address, and why unset and empty are not the same
+ *   1. `tokens` — the holder for the access token.
+ *   2. `client` — reads that holder, so every request carries the credential.
+ *   3. `operations` — the typed calls, bound to the client.
+ *   4. `session` — writes the holder, and is given only the three operations
+ *      that belong to *this* application.
  *
- * `NEXT_PUBLIC_API_URL` is inlined at build time, which is the constraint a
- * static export imposes: there is nothing to read an environment variable at run
- * time, so an image is built for one back end.
+ * The alternative, handing the client a closure over a `session` variable that
+ * does not exist yet, type-checks only with an assertion and breaks silently if
+ * the order ever changes. See `createAccessTokenSource`.
  *
- * That leaves two ways for it to be absent, and they must not be treated alike:
- *
- *   - **absent**, which is a developer running `npm run build` on a host. The
- *     local address is the right answer and is already the one
- *     `config/applications.php` names for this application, so it is used
- *     rather than making the documented workspace build fail.
- *
- *   - **present but empty**, which is a Docker build stage that declared the
- *     variable and was given no value. The `Dockerfile` declares the build
- *     argument with no default precisely so that omitting `--build-arg` arrives
- *     here as an empty string rather than as nothing at all, and this throws
- *     instead of quietly baking the local address into an image that would then
- *     point every deployment at a developer's own machine.
- *
- * The distinction is the whole trick, and it is `resolveBaseUrl` rather than an
- * `if` here so that it can be tested. Failing on both would make `npm run build`
- * unusable; defaulting on both would let a production image be built with
- * `localhost` in it and nobody would find out until a browser silently could
- * not sign in.
+ * The three operations passed in are the end user's, by name and not by a
+ * parameter. This application cannot reach a worker's, an administrator's or a
+ * super administrator's door even by accident, and the back end would refuse it
+ * if it tried.
  */
-const baseUrl = resolveBaseUrl(process.env.NEXT_PUBLIC_API_URL)
+const tokens = createAccessTokenSource()
 
 export const client = createApiClient({
-    baseUrl,
-    // Read per request rather than captured once, because a token is put back
-    // after a sign-in and this module is created before there is one.
-    getAccessToken,
+    baseUrl: resolveBaseUrl(process.env.NEXT_PUBLIC_API_URL),
+    getAccessToken: tokens.get,
 })
 
-export const operations = createOperations(client)
+const api = createOperations(client)
+
+export const session = createSession({
+    tokens,
+    store: webStorageRenewalTokenStore('fixmate.user.renewal'),
+    operations: {
+        signIn: (input) => api.signInUser(input),
+        renew: () => api.renewSessionUser(),
+        signOut: () => api.signOutUser(),
+    },
+})
 
 export { ApiError } from '@fixmate/api-client'
 export type { ApiErrorKind } from '@fixmate/api-client'
+export type { SessionEndReason, SessionState } from '@fixmate/session'
