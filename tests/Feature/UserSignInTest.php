@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Domain\IdentityAndAccess\ValueObjects\Ability;
 use App\Models\User;
 use App\Models\Worker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,12 +46,26 @@ class UserSignInTest extends TestCase
         $this->assertEquals($user->email, $data['user']['email']);
         $this->assertEquals(['users:*'], $data['abilities']);
 
-        // Verify token was created in database
-        $this->assertDatabaseCount('personal_access_tokens', 1);
-        $token = PersonalAccessToken::first();
-        $this->assertEquals($user->id, $token->tokenable_id);
-        $this->assertEquals(User::class, $token->tokenable_type);
-        $this->assertEquals(['users:*'], $token->abilities);
+        // Two tokens, because a sign-in issues a session and a session is two
+        // credentials: the access token asserted on here, and a renewal token
+        // that exists only so a page reload does not end it. The renewal token
+        // is checked in SessionRenewalTest; what matters here is that the access
+        // token carries the account type's abilities and the renewal token
+        // carries none of them.
+        $this->assertDatabaseCount('personal_access_tokens', 2);
+        $this->assertNotEmpty($data['renewal_token']);
+
+        $access = PersonalAccessToken::where('abilities', json_encode(['users:*']))->sole();
+        $this->assertEquals($user->id, $access->tokenable_id);
+        $this->assertEquals(User::class, $access->tokenable_type);
+
+        $renewal = PersonalAccessToken::where('abilities', json_encode([Ability::SESSION_RENEW]))->sole();
+        $this->assertEquals($user->id, $renewal->tokenable_id);
+        $this->assertNotSame(
+            $data['token'],
+            $data['renewal_token'],
+            'The access token and the renewal token must be different credentials; one is worth minutes and the other is held in browser storage.',
+        );
     }
 
     /**

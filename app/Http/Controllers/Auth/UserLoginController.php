@@ -9,6 +9,7 @@ use App\Application\IdentityAndAccess\UseCases\SignInEndUser;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\SignInRequest;
 use App\Http\Resources\Auth\SignInResource;
+use App\Infrastructure\IdentityAndAccess\SessionTokenIssuer;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
@@ -28,7 +29,10 @@ class UserLoginController extends Controller
      */
     private const REFUSAL_KEY = 'credentials';
 
-    public function __construct(private SignInEndUser $signInUseCase) {}
+    public function __construct(
+        private SignInEndUser $signInUseCase,
+        private SessionTokenIssuer $tokens,
+    ) {}
 
     /**
      * Handle sign-in request for end users.
@@ -66,11 +70,13 @@ class UserLoginController extends Controller
             throw $this->refusal(InvalidCredentials::MESSAGE, 422);
         }
 
-        $token = $user->createToken('api', $response->abilities)->plainTextToken;
+        // Two tokens, not one: the short-lived access token the application
+        // holds in memory, and the renewal token it puts in browser storage so
+        // that a page reload does not end the session. See SessionTokenIssuer
+        // for why the second is worth so much less than the first.
+        $issued = $this->tokens->issue($user, $response->abilities);
 
-        // Update response with actual token
-        $responseData = $response->toArray();
-        $responseData['token'] = $token;
+        $responseData = array_merge($response->toArray(), $issued->toSignInArray());
 
         return (new SignInResource($responseData))
             ->response()

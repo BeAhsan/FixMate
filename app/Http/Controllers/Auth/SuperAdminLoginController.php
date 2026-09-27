@@ -9,6 +9,7 @@ use App\Application\IdentityAndAccess\UseCases\SignInSuperAdmin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\SignInRequest;
 use App\Http\Resources\Auth\SignInResource;
+use App\Infrastructure\IdentityAndAccess\SessionTokenIssuer;
 use App\Models\SuperAdmin;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
@@ -33,6 +34,7 @@ class SuperAdminLoginController extends Controller
 
     public function __construct(
         private SignInSuperAdmin $signInUseCase,
+        private SessionTokenIssuer $tokens,
     ) {}
 
     /**
@@ -83,11 +85,13 @@ class SuperAdminLoginController extends Controller
             ])->status(422);
         }
 
-        $token = $superAdmin->createToken('api', $response->abilities)->plainTextToken;
+        // Two tokens, not one: the short-lived access token the application
+        // holds in memory, and the renewal token it puts in browser storage so
+        // that a page reload does not end the session. See SessionTokenIssuer
+        // for why the second is worth so much less than the first.
+        $issued = $this->tokens->issue($superAdmin, $response->abilities);
 
-        // Update response with actual token
-        $responseData = $response->toArray();
-        $responseData['token'] = $token;
+        $responseData = array_merge($response->toArray(), $issued->toSignInArray());
 
         return (new SignInResource($responseData))
             ->response()
