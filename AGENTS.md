@@ -122,12 +122,17 @@ the suite (Jenkins `Test` stage and `.github/workflows/laravel.yml`):
 ```sh
 php artisan api-client:generate          # write packages/api-client/src/generated
 php artisan api-client:check             # regenerate into a temp dir, compare to contract.json
+php artisan api-docs:check               # compare packages/api-client/openapi.json to the routes
 ```
 
 `api-client:check` is the check that catches a renamed route. Changing a route
 means changing `routes/api.php`, `packages/api-client/contract.json` and
-`packages/api-client/src/operations.ts` together, or the check fails. The
-TypeScript side:
+`packages/api-client/src/operations.ts` together, or the check fails.
+`api-docs:check` is a *separate* command for `openapi.json`, and the separation
+is load-bearing: `contract.json` has no field for a security requirement, so
+nothing in `api-client:check` would notice a document describing a protected
+route as open. `api-docs:check` reads the route's own gathered middleware, so it
+does not trust the document's sentence about it. The TypeScript side:
 
 ```sh
 npm install                             # once, from the root
@@ -239,9 +244,22 @@ never enter an image layer.
 ## The API surface
 
 - **`routes/api.php` is the only route file.** `bootstrap/app.php` mounts it
-  with the `api` middleware group under Laravel's default `api` prefix — still
-  not versioned. The spec wants a versioned prefix, but that decision belongs
-  to whichever ticket adds the first real route group, not to this one.
+  with the `api` middleware group under Laravel's default `api` prefix, and the
+  file itself adds `v1/identity`, so every path is `/api/v1/...`. The version
+  lives in `routes/api.php` rather than in the mount, which is where a second
+  version would be added.
+- **`packages/api-client/openapi.json` is a third committed description of the
+  API, and it is checked separately from the other two.** `contract.json` (four
+  fields per operation) and this document (schemas, descriptions, security) are
+  committed independently, so either can be updated alone. It carries two
+  extensions that exist only so the check has something to compare: every
+  operation has `x-laravel-route` (the Laravel route name), and every protected
+  one has `x-required-account-type` and `x-required-ability`. Those are compared
+  against the route's own `account.can` middleware arguments, and the security
+  requirement against whether `auth:sanctum` is in its gathered middleware — so
+  the check reads the routes rather than trusting the document's prose. Paths in
+  the document are absolute, including `/api`, and `servers` is `/`, so a path
+  can be compared to `route->uri()` with no base-path arithmetic.
 - **There are no front-end *applications* in this repository yet.** There is now
   a root `package.json` (npm workspaces: `apps/*`, `packages/*`) and one shared
   package, `packages/api-client`. The four Next.js applications arrive later and
