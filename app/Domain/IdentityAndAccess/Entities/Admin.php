@@ -50,6 +50,32 @@ readonly class Admin
     }
 
     /**
+     * A copy of this administrator with a different status.
+     *
+     * The entity is `readonly`, so a status change cannot be a mutation — it is a
+     * different administrator as far as this object is concerned, and the old one
+     * stays valid. That is not a limitation worked around; it is why the status
+     * cannot be changed by accident from somewhere that merely holds a reference.
+     * A caller that wants to suspend somebody says so here, explicitly, and the
+     * returned value is what gets saved.
+     *
+     * Whether the caller is *allowed* to is not decided here. A domain entity
+     * has no idea who is asking, and an entity that checked permissions would put
+     * an authorisation rule somewhere no reviewer looks for it. The rule belongs
+     * to the use case, which knows both the subject and the caller.
+     */
+    public function withStatus(AccountStatus $status): self
+    {
+        return new self(
+            id: $this->id,
+            name: $this->name,
+            email: $this->email,
+            passwordHash: $this->passwordHash,
+            status: $status,
+        );
+    }
+
+    /**
      * Create an Admin from persistence data.
      */
     public static function fromPersistence(

@@ -38,6 +38,15 @@ class EloquentEndUserRepository implements EndUserRepository
         return $this->toEntity($eloquentUser);
     }
 
+    public function all(): array
+    {
+        return EloquentUser::query()
+            ->orderBy('id')
+            ->get()
+            ->map(fn (EloquentUser $row) => $this->toEntity($row))
+            ->all();
+    }
+
     public function save(EndUser $user): EndUser
     {
         $eloquentUser = EloquentUser::updateOrCreate(

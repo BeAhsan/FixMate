@@ -45,6 +45,15 @@ class EloquentAdminRepository implements AdminRepository
         return $this->toEntity($eloquentAdmin);
     }
 
+    public function all(): array
+    {
+        return EloquentAdmin::query()
+            ->orderBy('id')
+            ->get()
+            ->map(fn (EloquentAdmin $row) => $this->toEntity($row))
+            ->all();
+    }
+
     public function save(Admin $admin): Admin
     {
         $eloquentAdmin = EloquentAdmin::updateOrCreate(

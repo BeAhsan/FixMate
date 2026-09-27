@@ -42,6 +42,15 @@ class EloquentWorkerRepository implements WorkerRepository
         return $this->toEntity($eloquentWorker);
     }
 
+    public function all(): array
+    {
+        return EloquentWorker::query()
+            ->orderBy('id')
+            ->get()
+            ->map(fn (EloquentWorker $row) => $this->toEntity($row))
+            ->all();
+    }
+
     public function save(Worker $worker): Worker
     {
         $eloquentWorker = EloquentWorker::updateOrCreate(

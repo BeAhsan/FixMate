@@ -17,15 +17,18 @@ import { forgotPassword as forgotPasswordWorker, resetPassword as resetPasswordW
 import {
     forgotPassword as forgotPasswordAdmin,
     me as meAdmin,
+    promote as promoteAdminRoute,
     resetPassword as resetPasswordAdmin,
     show as showAdmin,
+    suspend as suspendAdminRoute,
 } from './generated/routes/admins'
+import { index as listAccountsRoute } from './generated/routes/accounts'
 import {
     forgotPassword as forgotPasswordSuperAdmin,
     me as meSuperAdmin,
     resetPassword as resetPasswordSuperAdmin,
 } from './generated/routes/super-admins'
-import { array, number, object, string, type Schema } from './schema'
+import { array, nullable, number, object, string, type Schema } from './schema'
 import type { ApiClient, Route } from './http'
 
 /**
@@ -209,6 +212,28 @@ export interface AdminAccount {
     status: string
 }
 
+/**
+ * One row of the account directory: an account of any of the four types.
+ *
+ * `type` is the account type's own value — the same string the sign-in path and
+ * the token abilities already use — so a front end switches on it rather than on a
+ * display label, and a row stays interpretable when the listing mixes four types.
+ *
+ * One type for all four rows, and that is a simplification with a shelf life: the
+ * back end builds each row from a separate summary type precisely so that a
+ * staff-only field cannot leak into a worker's view, and the day one of those types
+ * gains a field, this shape is the place that will need four. It is declared as one
+ * type now because the four are currently identical, and the comment here is the
+ * thing that will tell the next person why they stopped being.
+ */
+export interface AccountSummary {
+    type: string
+    id: number
+    name: string
+    email: string
+    status: string
+}
+
 const signInRequest: Schema<SignInInput> = object({
     email: string(),
     password: string(),
@@ -366,6 +391,59 @@ const adminAccountResponse: Schema<{ data: AdminAccount }> = object({
 })
 
 /**
+ * One row of the account directory.
+ *
+ * `type` is on every row and is the account type's own value — the same string the
+ * sign-in path and the token abilities use. A front end switches on that rather
+ * than on a label, so a row is self-describing: the listing mixes four account
+ * types and would otherwise be uninterpretable.
+ *
+ * Four separate shapes, one per account type, is what the back end returns and what
+ * it means for one type's view not to grow another's fields. Declaring one
+ * `accountSummary` type here would model all four rows identically, which is
+ * currently true and is exactly the thing that stops being true the first time a
+ * staff-only field is added to one of them — and a type that cannot express the
+ * difference cannot warn you when it appears.
+ */
+const accountSummary: Schema<{
+    type: string
+    id: number
+    name: string
+    email: string
+    status: string
+}> = object({
+    type: string(),
+    id: number(),
+    name: string(),
+    email: string(),
+    status: string(),
+})
+
+const accountDirectoryResponse: Schema<{ data: AccountSummary[] }> = object({
+    data: array(accountSummary),
+})
+
+/**
+ * A promotion returns the new account and a warning.
+ *
+ * `warning` is nullable and never absent. A field that appears and disappears is a
+ * field four front ends each have to branch on, and one of them will branch on it
+ * wrongly; a field that is always present and is sometimes null is one check.
+ *
+ * The sentence is written by the back end, which is the only place that knows what
+ * the threshold is. Parsing the count out of it here to re-decide whether to warn
+ * would be a second threshold in a second language, and the two would disagree
+ * quietly. Show what it says.
+ */
+const promotedAccountResponse: Schema<{ data: { account: AccountSummary; warning: string | null } }> =
+    object({
+        data: object({
+            account: accountSummary,
+            warning: nullable(string()),
+        }),
+    })
+
+/**
  * A renewal takes no body.
  *
  * The renewal token is the credential, and it travels in the `Authorization`
@@ -481,6 +559,32 @@ const definitions = {
         // 404 depending on the day.
         route: (admin: number) => showAdmin({ admin }) satisfies Route,
         response: adminAccountResponse,
+    },
+
+    // The account directory, and the two operations that change an account. All
+    // three are super-administrator-only and none of them exists for the four
+    // applications to call yet: the dashboards are shells, so nothing imports
+    // these. They are declared because the contract declares them, and a client
+    // that is missing an operation the back end offers cannot be checked against
+    // it - the drift check compares the two lists, and an operation on one side
+    // only is a failure in both directions.
+
+    listAccounts: {
+        route: () => listAccountsRoute() satisfies Route,
+        response: accountDirectoryResponse,
+    },
+
+    suspendAdmin: {
+        // Takes no body. The only question is whether, and the path already answers
+        // it; a body would be somewhere for a caller to put a status of their own
+        // choosing, and the back end ignores it.
+        route: (admin: number) => suspendAdminRoute({ admin }) satisfies Route,
+        response: adminAccountResponse,
+    },
+
+    promoteAdmin: {
+        route: (admin: number) => promoteAdminRoute({ admin }) satisfies Route,
+        response: promotedAccountResponse,
     },
 
     // The session operations. Four of each, for the same reason the `me`

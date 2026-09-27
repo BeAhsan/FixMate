@@ -4,6 +4,7 @@ namespace App\Infrastructure\IdentityAndAccess\Repositories;
 
 use App\Domain\IdentityAndAccess\Entities\SuperAdmin;
 use App\Domain\IdentityAndAccess\Repositories\SuperAdminRepository;
+use App\Domain\IdentityAndAccess\ValueObjects\AccountStatus;
 use App\Domain\IdentityAndAccess\ValueObjects\Email;
 use App\Domain\IdentityAndAccess\ValueObjects\UserId;
 use App\Models\SuperAdmin as EloquentSuperAdmin;
@@ -42,6 +43,40 @@ class EloquentSuperAdminRepository implements SuperAdminRepository
         }
 
         return $this->toEntity($eloquentSuperAdmin);
+    }
+
+    public function all(): array
+    {
+        return EloquentSuperAdmin::query()
+            ->orderBy('id')
+            ->get()
+            ->map(fn (EloquentSuperAdmin $row) => $this->toEntity($row))
+            ->all();
+    }
+
+    public function countSuperAdmins(): int
+    {
+        return EloquentSuperAdmin::query()->count();
+    }
+
+    public function create(
+        string $name,
+        Email $email,
+        string $passwordHash,
+        AccountStatus $status,
+    ): SuperAdmin {
+        // `create` rather than `updateOrCreate`, and with no identifier in the
+        // attributes. The store assigns the identifier, which is the entire reason
+        // this method is separate from save(): there is no identifier to match on,
+        // and inventing one is how a promotion ends up overwriting somebody.
+        $row = EloquentSuperAdmin::query()->create([
+            'name' => $name,
+            'email' => $email->value,
+            'password' => $passwordHash,
+            'status' => $status->value,
+        ]);
+
+        return $this->toEntity($row);
     }
 
     public function save(SuperAdmin $superAdmin): SuperAdmin

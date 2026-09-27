@@ -1,166 +1,184 @@
 {
-    "$comment": [
-        "The front ends' recorded expectation of the back end's API. The generated",
-        "client is not committed, so this file is what `php artisan api-client:check`",
-        "compares a fresh generation against. Every field is a duplicate of something",
-        "the back end also knows; that is the point, because a check cannot detect a",
-        "change it has no independent record of.",
-        "",
-        "route   the Laravel route name the function is generated from",
-        "method  the HTTP verb the function must answer",
-        "path    the URL the function must produce, including the /api prefix",
-        "name    the operation name in packages/api-client/src/operations.ts"
-    ],
-    "operations": [
-        {
-            "name": "signInUser",
-            "route": "users.signin",
-            "method": "post",
-            "path": "/api/v1/identity/users/sign-in"
-        },
-        {
-            "name": "signInWorker",
-            "route": "workers.signin",
-            "method": "post",
-            "path": "/api/v1/identity/workers/sign-in"
-        },
-        {
-            "name": "signInAdmin",
-            "route": "admins.signin",
-            "method": "post",
-            "path": "/api/v1/identity/admins/sign-in"
-        },
-        {
-            "name": "signInSuperAdmin",
-            "route": "super-admins.signin",
-            "method": "post",
-            "path": "/api/v1/identity/super-admins/sign-in"
-        },
-        {
-            "name": "forgotPasswordUser",
-            "route": "users.forgot-password",
-            "method": "post",
-            "path": "/api/v1/identity/users/forgot-password"
-        },
-        {
-            "name": "resetPasswordUser",
-            "route": "users.reset-password",
-            "method": "post",
-            "path": "/api/v1/identity/users/reset-password"
-        },
-        {
-            "name": "forgotPasswordWorker",
-            "route": "workers.forgot-password",
-            "method": "post",
-            "path": "/api/v1/identity/workers/forgot-password"
-        },
-        {
-            "name": "resetPasswordWorker",
-            "route": "workers.reset-password",
-            "method": "post",
-            "path": "/api/v1/identity/workers/reset-password"
-        },
-        {
-            "name": "forgotPasswordAdmin",
-            "route": "admins.forgot-password",
-            "method": "post",
-            "path": "/api/v1/identity/admins/forgot-password"
-        },
-        {
-            "name": "resetPasswordAdmin",
-            "route": "admins.reset-password",
-            "method": "post",
-            "path": "/api/v1/identity/admins/reset-password"
-        },
-        {
-            "name": "forgotPasswordSuperAdmin",
-            "route": "super-admins.forgot-password",
-            "method": "post",
-            "path": "/api/v1/identity/super-admins/forgot-password"
-        },
-        {
-            "name": "resetPasswordSuperAdmin",
-            "route": "super-admins.reset-password",
-            "method": "post",
-            "path": "/api/v1/identity/super-admins/reset-password"
-        },
-        {
-            "name": "currentUser",
-            "route": "users.me",
-            "method": "get",
-            "path": "/api/v1/identity/users/me"
-        },
-        {
-            "name": "currentWorker",
-            "route": "workers.me",
-            "method": "get",
-            "path": "/api/v1/identity/workers/me"
-        },
-        {
-            "name": "currentAdmin",
-            "route": "admins.me",
-            "method": "get",
-            "path": "/api/v1/identity/admins/me"
-        },
-        {
-            "name": "currentSuperAdmin",
-            "route": "super-admins.me",
-            "method": "get",
-            "path": "/api/v1/identity/super-admins/me"
-        },
-        {
-            "name": "renewSessionUser",
-            "route": "users.session.renew",
-            "method": "post",
-            "path": "/api/v1/identity/users/session/renew"
-        },
-        {
-            "name": "signOutUser",
-            "route": "users.sign-out",
-            "method": "post",
-            "path": "/api/v1/identity/users/sign-out"
-        },
-        {
-            "name": "renewSessionWorker",
-            "route": "workers.session.renew",
-            "method": "post",
-            "path": "/api/v1/identity/workers/session/renew"
-        },
-        {
-            "name": "signOutWorker",
-            "route": "workers.sign-out",
-            "method": "post",
-            "path": "/api/v1/identity/workers/sign-out"
-        },
-        {
-            "name": "renewSessionAdmin",
-            "route": "admins.session.renew",
-            "method": "post",
-            "path": "/api/v1/identity/admins/session/renew"
-        },
-        {
-            "name": "signOutAdmin",
-            "route": "admins.sign-out",
-            "method": "post",
-            "path": "/api/v1/identity/admins/sign-out"
-        },
-        {
-            "name": "renewSessionSuperAdmin",
-            "route": "super-admins.session.renew",
-            "method": "post",
-            "path": "/api/v1/identity/super-admins/session/renew"
-        },
-        {
-            "name": "signOutSuperAdmin",
-            "route": "super-admins.sign-out",
-            "method": "post",
-            "path": "/api/v1/identity/super-admins/sign-out"
-        },
-        {
-            "name": "showAdmin",
-            "route": "admins.show",
-            "method": "get",
-            "path": "/api/v1/identity/admins/{admin}"
-        }
-    ]
+  "$comment": [
+    "The front ends' recorded expectation of the back end's API. The generated",
+    "client is not committed, so this file is what `php artisan api-client:check`",
+    "compares a fresh generation against. Every field is a duplicate of something",
+    "the back end also knows; that is the point, because a check cannot detect a",
+    "change it has no independent record of.",
+    "",
+    "route   the Laravel route name the function is generated from",
+    "method  the HTTP verb the function must answer",
+    "path    the URL the function must produce, including the /api prefix",
+    "name    the operation name in packages/api-client/src/operations.ts"
+  ],
+  "operations": [
+    {
+      "name": "signInUser",
+      "route": "users.signin",
+      "method": "post",
+      "path": "/api/v1/identity/users/sign-in"
+    },
+    {
+      "name": "signInWorker",
+      "route": "workers.signin",
+      "method": "post",
+      "path": "/api/v1/identity/workers/sign-in"
+    },
+    {
+      "name": "signInAdmin",
+      "route": "admins.signin",
+      "method": "post",
+      "path": "/api/v1/identity/admins/sign-in"
+    },
+    {
+      "name": "signInSuperAdmin",
+      "route": "super-admins.signin",
+      "method": "post",
+      "path": "/api/v1/identity/super-admins/sign-in"
+    },
+    {
+      "name": "forgotPasswordUser",
+      "route": "users.forgot-password",
+      "method": "post",
+      "path": "/api/v1/identity/users/forgot-password"
+    },
+    {
+      "name": "resetPasswordUser",
+      "route": "users.reset-password",
+      "method": "post",
+      "path": "/api/v1/identity/users/reset-password"
+    },
+    {
+      "name": "forgotPasswordWorker",
+      "route": "workers.forgot-password",
+      "method": "post",
+      "path": "/api/v1/identity/workers/forgot-password"
+    },
+    {
+      "name": "resetPasswordWorker",
+      "route": "workers.reset-password",
+      "method": "post",
+      "path": "/api/v1/identity/workers/reset-password"
+    },
+    {
+      "name": "forgotPasswordAdmin",
+      "route": "admins.forgot-password",
+      "method": "post",
+      "path": "/api/v1/identity/admins/forgot-password"
+    },
+    {
+      "name": "resetPasswordAdmin",
+      "route": "admins.reset-password",
+      "method": "post",
+      "path": "/api/v1/identity/admins/reset-password"
+    },
+    {
+      "name": "forgotPasswordSuperAdmin",
+      "route": "super-admins.forgot-password",
+      "method": "post",
+      "path": "/api/v1/identity/super-admins/forgot-password"
+    },
+    {
+      "name": "resetPasswordSuperAdmin",
+      "route": "super-admins.reset-password",
+      "method": "post",
+      "path": "/api/v1/identity/super-admins/reset-password"
+    },
+    {
+      "name": "currentUser",
+      "route": "users.me",
+      "method": "get",
+      "path": "/api/v1/identity/users/me"
+    },
+    {
+      "name": "currentWorker",
+      "route": "workers.me",
+      "method": "get",
+      "path": "/api/v1/identity/workers/me"
+    },
+    {
+      "name": "currentAdmin",
+      "route": "admins.me",
+      "method": "get",
+      "path": "/api/v1/identity/admins/me"
+    },
+    {
+      "name": "currentSuperAdmin",
+      "route": "super-admins.me",
+      "method": "get",
+      "path": "/api/v1/identity/super-admins/me"
+    },
+    {
+      "name": "renewSessionUser",
+      "route": "users.session.renew",
+      "method": "post",
+      "path": "/api/v1/identity/users/session/renew"
+    },
+    {
+      "name": "signOutUser",
+      "route": "users.sign-out",
+      "method": "post",
+      "path": "/api/v1/identity/users/sign-out"
+    },
+    {
+      "name": "renewSessionWorker",
+      "route": "workers.session.renew",
+      "method": "post",
+      "path": "/api/v1/identity/workers/session/renew"
+    },
+    {
+      "name": "signOutWorker",
+      "route": "workers.sign-out",
+      "method": "post",
+      "path": "/api/v1/identity/workers/sign-out"
+    },
+    {
+      "name": "renewSessionAdmin",
+      "route": "admins.session.renew",
+      "method": "post",
+      "path": "/api/v1/identity/admins/session/renew"
+    },
+    {
+      "name": "signOutAdmin",
+      "route": "admins.sign-out",
+      "method": "post",
+      "path": "/api/v1/identity/admins/sign-out"
+    },
+    {
+      "name": "renewSessionSuperAdmin",
+      "route": "super-admins.session.renew",
+      "method": "post",
+      "path": "/api/v1/identity/super-admins/session/renew"
+    },
+    {
+      "name": "signOutSuperAdmin",
+      "route": "super-admins.sign-out",
+      "method": "post",
+      "path": "/api/v1/identity/super-admins/sign-out"
+    },
+    {
+      "name": "showAdmin",
+      "route": "admins.show",
+      "method": "get",
+      "path": "/api/v1/identity/admins/{admin}"
+    },
+    {
+      "name": "listAccounts",
+      "route": "accounts.index",
+      "method": "get",
+      "path": "/api/v1/identity/accounts"
+    },
+    {
+      "name": "suspendAdmin",
+      "route": "admins.suspend",
+      "method": "post",
+      "path": "/api/v1/identity/admins/{admin}/suspend"
+    },
+    {
+      "name": "promoteAdmin",
+      "route": "admins.promote",
+      "method": "post",
+      "path": "/api/v1/identity/admins/{admin}/promote"
+    }
+  ]
 }

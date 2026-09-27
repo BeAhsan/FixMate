@@ -18,7 +18,10 @@
 
 use App\Domain\IdentityAndAccess\ValueObjects\Ability;
 use App\Domain\IdentityAndAccess\ValueObjects\AccountType;
+use App\Http\Controllers\Accounts\IndexAccountsController;
+use App\Http\Controllers\Accounts\PromoteAdminController;
 use App\Http\Controllers\Accounts\ShowAdminController;
+use App\Http\Controllers\Accounts\SuspendAdminController;
 use App\Http\Controllers\Auth\AdminLoginController;
 use App\Http\Controllers\Auth\AdminPasswordResetController;
 use App\Http\Controllers\Auth\CurrentAccountController;
@@ -199,5 +202,36 @@ Route::prefix('v1/identity')
                 // the first thing an attacker typed.
                 ->where('admin', '[1-9][0-9]*')
                 ->name('admins.show');
+
+            // The directory: every account of every type, in one list.
+            //
+            // `accounts:read` rather than the wildcard, so the route states what it
+            // needs and a future account type with a narrower set is a one-word
+            // change. The account type is stated too, and it is the half that
+            // refuses an end user, a worker and an administrator alike: they are
+            // all the wrong kind of account, and they all get the same 403.
+            Route::get('/accounts', IndexAccountsController::class)
+                ->middleware('account.can:'.AccountType::SuperAdmin->value.','.Ability::ACCOUNTS_READ)
+                ->name('accounts.index');
+
+            // Suspend, and promote. Two abilities rather than one, because they are
+            // two different powers: withdrawing access is something almost any
+            // system needs an administrator to be able to do, while handing out the
+            // most powerful account type is not. Sharing an ability would mean
+            // granting one granted the other, and there would be no way back.
+            //
+            // POST, not PATCH, and no request body: neither operation takes
+            // parameters beyond the identifier, and a body would be a place for a
+            // caller to put a status of their own choosing. The only question is
+            // whether, and the path already answers it.
+            Route::post('/admins/{admin}/suspend', SuspendAdminController::class)
+                ->middleware('account.can:'.AccountType::SuperAdmin->value.','.Ability::ACCOUNTS_SUSPEND)
+                ->where('admin', '[1-9][0-9]*')
+                ->name('admins.suspend');
+
+            Route::post('/admins/{admin}/promote', PromoteAdminController::class)
+                ->middleware('account.can:'.AccountType::SuperAdmin->value.','.Ability::ACCOUNTS_PROMOTE)
+                ->where('admin', '[1-9][0-9]*')
+                ->name('admins.promote');
         });
     });
