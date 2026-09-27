@@ -73,6 +73,56 @@ Notes:
 - Config is not cached in development, so `.env` and `config/` changes apply on
   the next request.
 
+## The workspace
+
+This repository is an npm-workspaces monorepo. The Laravel back end is the
+payload; `apps/` and `packages/` are what the front ends are built from, and npm
+is the package manager because the repository already had a lockfile and the
+pipeline already installs with it.
+
+| Path | What it is |
+| --- | --- |
+| `apps/` | The four deployed front ends. Empty of applications for now — see `apps/README.md`. |
+| `packages/` | Shared code the applications import: `packages/api-client` so far. |
+| `package.json` | The workspace root. The `workspaces` globs are `apps/*` and `packages/*`. |
+
+`npm install` at the root installs every member's dependencies, hoisting what it
+can into a single root `node_modules` and linking each member in by its
+`@fixmate/*` name. An application imports `@fixmate/api-client`, never a
+relative path across the workspace.
+
+### One command builds everything
+
+```sh
+npm install
+npm run build
+```
+
+From a clean checkout that is the whole sequence, and `npm run build` is the one
+thing worth memorising. It does two things in order:
+
+1. `php artisan api-client:generate`, because `packages/api-client/src/generated`
+   is not committed and nothing in the workspace can compile without it. The
+   failure without this step is a wall of `Cannot find module
+   './generated/routes/…'`, which reads like a broken package rather than a
+   missing prerequisite.
+2. Each member's own `build`, in dependency order.
+
+Note that the second step does **not** pass `--if-present`, unlike `typecheck`
+and `test`. A member without a `build` script is a mistake, and `--if-present`
+would skip it and exit 0 — a green build that built nothing. Without the flag
+npm fails with `Missing script: "build"` and names the member.
+
+`npm run typecheck` and `npm test` do keep `--if-present`, because a package with
+no tests is legitimate and one with no `typecheck` is a member that has not
+needed one yet.
+
+`apps/` deliberately holds no application yet. The workspace was stood up first
+so that the first application is added to a structure already known to install,
+resolve and build. One image serves three back-end roles, so the API build has
+no Node in it and is not going to grow one; each application is built and shipped
+by its own pipeline.
+
 ## The typed API client
 
 `packages/api-client` is the single place that knows how to talk to this back

@@ -46,6 +46,35 @@ show `--exclude '.env'` is what saves the VPS copy).
   `.gitignore`: that would silently untrack the fixture. If a build ever needs
   the root directory, rename the fixture in its own commit rather than deleting
   it, and update this section.
+- **`.dockerignore` scopes its `out` exclusion to `apps/*/out` and
+  `packages/*/out` for the same reason.** A bare `out` there would match the
+  root fixture. The fixture travelling into the image is harmless and
+  expected; a bare `out` in an ignore file is how it starts quietly not
+  travelling, which is a different kind of wrong.
+
+### A bare `node_modules` in `.dockerignore` only matches the root
+
+Docker matches an ignore pattern containing no slash against the **root
+directory only**, unlike `.gitignore`, where a slashless pattern matches at any
+depth. The two files in this repository look similar and do not behave the same
+way, and the `.dockerignore` was wrong about this: a bare `node_modules`
+excluded the root install and let every nested one through.
+
+That mattered little with one package and no applications. It does not matter
+little with four Next.js applications, each of which can end up with its own
+`node_modules` — npm nests a workspace's own `node_modules` inside the package
+whenever hoisting conflicts, which the `.gitignore` comment on the same pattern
+already says out loud. `.dockerignore` now uses `**/node_modules`. Verified with
+a real `docker build` and a `find` in the resulting layer: nested
+`apps/user/node_modules` was present before and is gone after.
+
+The general form of the trap: **the Dockerfile does `COPY . .`, so anything
+`.dockerignore` does not list is swept into the API image on every build, and
+the build still succeeds.** Front-end build output is excluded ahead of the
+applications that produce it — `**/.next`, `apps/*/out`, `apps/*/dist`,
+`packages/*/dist`, `**/coverage`, `**/.turbo` — because adding a line to a list
+costs nothing and un-learning one costs an image that is hundreds of megabytes
+larger than it should be.
 
 ### `/up` is the last HTML response, and it does not come from this app's code
 
@@ -136,12 +165,29 @@ does not trust the document's sentence about it. The TypeScript side:
 
 ```sh
 npm install                             # once, from the root
+npm run build                           # generate the client, then build every member
 npm run typecheck
 npm test
 ```
 
-Both need `php artisan api-client:generate` to have run first, because
-`src/generated/` is not committed and the TypeScript imports it.
+`npm run build` is the single documented build for the whole workspace, and it
+is the only one worth memorising. It runs `php artisan api-client:generate`
+first, because `src/generated/` is not committed and nothing compiles without
+it, then every member's `build`.
+
+**It does not pass `--if-present`, unlike `typecheck` and `test`.** A member
+without a `build` script is a mistake, and `--if-present` would skip it and exit
+0 — a green build that built nothing. Verified against npm 11: with the flag, a
+workspace missing the script exits 0; without it, npm fails with `Missing
+script: "build"` and names the member. Do not "tidy" the flag away.
+
+`typecheck` and `test` keep `--if-present` deliberately: a package with no tests
+is legitimate.
+
+Both `npm run typecheck` and `npm run build` need
+`php artisan api-client:generate` to have happened, because `src/generated/` is
+not committed and the TypeScript imports it. `build` does it for you;
+`typecheck` does not.
 
 CI runs `pint --test`, so an unformatted file is caught by CI rather than by you.
 
@@ -244,28 +290,27 @@ never enter an image layer.
 ## The API surface
 
 - **`routes/api.php` is the only route file.** `bootstrap/app.php` mounts it
-  with the `api` middleware group under Laravel's default `api` prefix, and the
-  file itself adds `v1/identity`, so every path is `/api/v1/...`. The version
-  lives in `routes/api.php` rather than in the mount, which is where a second
-  version would be added.
-- **`packages/api-client/openapi.json` is a third committed description of the
-  API, and it is checked separately from the other two.** `contract.json` (four
-  fields per operation) and this document (schemas, descriptions, security) are
-  committed independently, so either can be updated alone. It carries two
-  extensions that exist only so the check has something to compare: every
-  operation has `x-laravel-route` (the Laravel route name), and every protected
-  one has `x-required-account-type` and `x-required-ability`. Those are compared
-  against the route's own `account.can` middleware arguments, and the security
-  requirement against whether `auth:sanctum` is in its gathered middleware — so
-  the check reads the routes rather than trusting the document's prose. Paths in
-  the document are absolute, including `/api`, and `servers` is `/`, so a path
-  can be compared to `route->uri()` with no base-path arithmetic.
-- **There are no front-end *applications* in this repository yet.** There is now
-  a root `package.json` (npm workspaces: `apps/*`, `packages/*`) and one shared
-  package, `packages/api-client`. The four Next.js applications arrive later and
-  populate `apps/`. Still no `resources/`, no `public/build`, no Vite — and
-  **still do not add a front-end build step to the image**, which builds one
-  image that serves three roles from the same workspace.
+  with the `api` middleware group under Laravel's default `api` prefix — still
+  not versioned. The spec wants a versioned prefix, but that decision belongs
+  to whichever ticket adds the first real route group, not to this one.
+- **There are no front-end *applications* in this repository yet.** There is a
+  root `package.json` (npm workspaces: `apps/*`, `packages/*`), an `apps/`
+  directory holding only a README, and one shared package,
+  `packages/api-client`. The four Next.js applications arrive later and populate
+  `apps/`. Still no `resources/`, no `public/build`, no Vite — and **still do not
+  add a front-end build step to the image**, which builds one image that serves
+  three roles from the same workspace.
+- **`apps/` exists only because git cannot track an empty directory.** That is
+  what `apps/README.md` is for; do not treat it as a stray file or delete it
+  expecting `apps/` to survive. Ticket 14 adds the first application.
+- **A file inside a workspace package can import the package by its own
+  `@fixmate/*` name without the workspace link existing**, because Node,
+  TypeScript and Vite all resolve a package's own name through its own `exports`
+  map. So a bare import proves nothing about the workspace. That is why
+  `packages/api-client/test/workspace.test.ts` asserts the
+  `node_modules/@fixmate/api-client` link itself, walking up from the test file
+  the way Node does; deleting the link fails those two tests and leaves the
+  imports passing. Do not replace that with an import and call it coverage.
 - **`src/generated/` under a package is never committed.** It is produced by
   `php artisan api-client:generate` (gitignored, and `.dockerignore`d so a host
   copy cannot leak in). Anything hand-written must live outside
