@@ -148,6 +148,75 @@ pipeline {
             }
         }
 
+        // The four front ends. A stage of its own, mirroring the `front-end` job
+        // in .github/workflows/laravel.yml step for step — the same commands in
+        // the same order, because a check that exists in one gate and not the
+        // other is a check nobody can rely on.
+        //
+        // Everything runs in containers, like the rest of this pipeline, because
+        // the controller has no Node and no PHP of its own. The bind mount is the
+        // one departure from the socket-only arrangement the other stages use,
+        // and it is necessary rather than incidental: a `node` container cannot
+        // see the workspace without one, and the workspace is where the
+        // generated client has to land.
+        stage('Front end') {
+            steps {
+                sh '''
+                    set -eu
+
+                    # The generated client first, from the test image that already
+                    # has PHP and the dev dependencies. It is never committed —
+                    # that is the point of the drift check — so nothing in the
+                    # front end can typecheck or build without this step, and
+                    # every application imports @fixmate/api-client.
+                    #
+                    # --no-dev is NOT used for this image: `api-client:generate` is
+                    # served by laravel/wayfinder, a require-dev dependency.
+                    docker run --rm \
+                        -v "$PWD":/w -w /w \
+                        "${CI_TEST_IMAGE}" \
+                        php artisan api-client:generate
+
+                    # node:22 matches the `engines.node` field in the root
+                    # package.json. The npm cache is a named volume rather than a
+                    # bind mount so it survives between builds without ending up
+                    # inside the workspace.
+                    #
+                    # `npm run build --workspaces`, NOT the root `npm run build`.
+                    # The root script begins with `php artisan
+                    # api-client:generate`, and there is no PHP in this container —
+                    # it exits 127 with "php: not found". That is why generation
+                    # is the separate step above rather than part of the build:
+                    # it needs PHP, and the build needs Node, and no single
+                    # container here has both. The root command remains the right
+                    # one for a developer on a host, where both are installed.
+                    #
+                    # NEXT_PUBLIC_API_URL is deliberately absent. The back end's
+                    # address is inlined into each export at build time and the
+                    # application falls back to the local address when the
+                    # variable is unset, so this needs no secret and no running
+                    # service. A *blank* value is what fails a build, and nothing
+                    # here sets one.
+                    docker run --rm \
+                        -v "$PWD":/w -w /w \
+                        -v fixmate-npm-cache:/root/.npm \
+                        -e NEXT_PUBLIC_API_URL \
+                        node:22-alpine \
+                        sh -c 'set -eu
+                            npm ci
+                            npm run typecheck
+                            npm test
+                            npm run build --workspaces'
+
+                    # The generated client is build output in the workspace now,
+                    # and it must not be left behind for the deploy stages to
+                    # pick up. `src/generated` is gitignored, so this is belt and
+                    # braces rather than the only thing preventing it.
+                    rm -rf packages/api-client/src/generated
+                '''
+            }
+        }
+
         stage('Build and push') {
             when { expression { params.TARGET != 'none' } }
             steps {
