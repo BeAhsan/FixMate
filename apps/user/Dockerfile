@@ -26,6 +26,21 @@
 
 ARG NODE_VERSION=24
 
+# The back end's address, inlined into the export.
+#
+# `NEXT_PUBLIC_` is what makes it readable in the browser bundle, and the
+# consequence is that the value is fixed when the image is built, not when it is
+# run: a static export has nothing to read an environment variable at run time.
+# One image is therefore built for one back end, which is the same trade the
+# release record already makes by treating all five versions as a set.
+#
+# NO DEFAULT, deliberately. Omitting `--build-arg` therefore arrives in the
+# build stage as an empty string, and `lib/api.ts` throws on an empty string
+# rather than falling back to the local address it uses for a host build. A
+# default here would produce an image that starts, reports healthy, and points
+# every person who uses it at `localhost`.
+ARG NEXT_PUBLIC_API_URL
+
 # ---------------------------------------------------------------------------
 # Stage 1 - Build the static export
 # ---------------------------------------------------------------------------
@@ -33,7 +48,21 @@ FROM node:${NODE_VERSION}-alpine AS build
 
 WORKDIR /workspace
 
+# Re-declared inside the stage, which is not repetition. An ARG before the first
+# FROM is global to the build and is *not* in scope inside a stage; using one
+# there without re-declaring it silently expands to nothing. That failure is
+# invisible in the build log - the build runs, the application just finds no
+# address - and it is caught here only because the application refuses to
+# prerender without one.
+ARG NEXT_PUBLIC_API_URL
+
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Declared as an environment variable in the build stage as well as an ARG, so
+# the value reaches the bundler. A build arg alone is not visible to the
+# application; `NEXT_PUBLIC_` is a build-time inlining mechanism, not a runtime
+# environment variable, which is the whole constraint noted on the ARG above.
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 # The manifests first, so this layer is cached until a dependency changes.
 # Every workspace member's package.json is needed, not just this application's:
@@ -47,13 +76,20 @@ RUN npm ci
 
 COPY apps/user ./apps/user
 
+# The API client, from source. Its package.json points `main` and `types` at
+# `./src/index.ts`, so Next.js compiles it as part of this build rather than
+# consuming a build artefact - which is why there is no build step for it here.
+#
+# `src/generated` comes along with it and is the reason the pipeline has to
+# generate the client before building this image. See the note on that line in
+# .dockerignore: the API image cannot generate it (it installs --no-dev, and
+# wayfinder is a dev dependency), so nothing else in this repository can either.
+COPY packages/api-client/src ./packages/api-client/src
+
 # This application's own build, not the root `npm run build`. The root script
 # begins with `php artisan api-client:generate`, and there is deliberately no
-# PHP or Composer in this image - the generated client is produced in the
-# pipeline, in a throwaway PHP container, before this image is built. This
-# application does not call the back end yet; the one that does arrives with
-# the ticket that wires it up, and that image is the one that needs the
-# generated output present in its context.
+# PHP or Composer in this image: the client is generated in the pipeline, in a
+# throwaway PHP container, before this image is built.
 RUN npm run build --workspace=@fixmate/user-app \
     && test -f apps/user/out/index.html \
     || (echo "the build produced no out/index.html" >&2; exit 1)

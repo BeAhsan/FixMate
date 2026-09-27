@@ -10,10 +10,28 @@ There is no Node process at runtime and no application server, which is what
 makes the image below possible and what makes the deployed footprint a few
 megabytes of nginx rather than a running application.
 
-It does not talk to the back end yet. That is ticket 15, and it is also the
-ticket that adds `@fixmate/api-client` as a dependency — which is why this
-image needs no PHP: the generated client is produced in the pipeline, in a
-throwaway PHP container, before the front-end images are built.
+It talks to the back end. It calls the generated typed client — never a
+hand-written URL — through `lib/api.ts`, which is the only module in this
+application that knows the API exists. The sign-in screen is at
+`/sign-in/`, and the token it receives is held in memory by `lib/session.ts`
+and nowhere else.
+
+## The back end's address is fixed at build time
+
+`NEXT_PUBLIC_API_URL` is inlined into the bundle by the build, so one image is
+built for one back end:
+
+```sh
+docker build -f apps/user/Dockerfile \
+  --build-arg NEXT_PUBLIC_API_URL=http://localhost:8000 \
+  -t fixmate/user-app:<sha> .
+```
+
+`lib/api.ts` throws at module load if it is unset, which fails `next build`
+rather than producing an image that cannot sign anyone in. That is deliberate,
+and it is how a missing build argument was caught here: a `docker build --build-arg`
+that is not re-declared inside the build stage expands to nothing, the build
+still succeeds, and the only symptom is a blank screen in a browser.
 
 ## Commands
 
@@ -92,12 +110,53 @@ proves the application is being served rather than that a port is open.
 
 ## What is deliberately not here yet
 
-- **Sign-in** (ticket 15) and the **session layer** (ticket 16). The access
-  token will be held in memory only, never in local storage, because a static
-  export has no server-side session and no way to set an httpOnly cookie from
-  application code.
+- **The session layer** (ticket 16): the renewal token, silent renewal, and
+  the signed-in state exposed to the application. Until then a page reload signs
+  the person out, which is the honest consequence of holding the access token in
+  memory only.
 - **The application shell** (ticket 17): header, navigation, sign-out. The
   landing page is plain on purpose, so the difference the shell makes is
   visible when it arrives.
 - **A Docker Compose service** (ticket 21) and **a pipeline stage** (ticket 24).
   The image is built and verified here; nothing deploys it yet.
+
+## Verifying a sign-in end to end
+
+The check that matters is a real one, and it needs three things running: the
+API, the image, and a browser.
+
+```sh
+# 1. An API with an account in the users store.
+php artisan migrate:fresh
+php artisan tinker --execute '
+  $u = App\Models\User::firstOrNew(["email" => "ada@example.test"]);
+  $u->name = "Ada Lovelace";
+  $u->password = bcrypt("correct-horse-battery");
+  $u->status = "active";
+  $u->save();'
+php artisan serve --port=8000
+
+# 2. The image, on the port config/applications.php names for this application.
+docker build -f apps/user/Dockerfile \
+  --build-arg NEXT_PUBLIC_API_URL=http://localhost:8000 \
+  -t fixmate/user-app:verify .
+docker run --rm -d --name user-verify -p 3000:80 fixmate/user-app:verify
+
+# 3. Open http://localhost:3000/sign-in/ and sign in as ada@example.test.
+```
+
+The port matters and is not incidental: `3000` is this application's address in
+`config/applications.php`, and a browser will refuse to hand the response to the
+page from any other origin. Seeing the sign-in succeed is therefore also the
+proof that the allowed-origins list names this application.
+
+Two failures worth watching for, because both were real here:
+
+- **The message on a wrong password is the back end's**, verbatim —
+  "These credentials do not match our records." The application does not
+  paraphrase it, because that refusal is deliberately indistinguishable between
+  an unknown address, a wrong password and a suspended account.
+- **A 200 with the wrong shape is reported as a broken contract**, not as a
+  wrong password. A status code cannot catch that one, so it is worth seeing
+  once: stand a stub on port 8000 that answers `200 {"data":"signed-in"}` and
+  the screen says the service replied in a shape it does not recognise.

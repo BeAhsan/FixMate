@@ -308,7 +308,48 @@ never enter an image layer.
   runs `npm run build --workspace=@fixmate/user-app` and **not** the root
   `npm run build`, because the root script starts with
   `php artisan api-client:generate` and there is deliberately no PHP in a
-  front-end image.
+  front-end image. `packages/api-client/src` is copied into the build stage;
+  the client has no build step of its own because its `main` and `types` point at
+  `./src/index.ts`, so Next compiles it from source.
+- **The four application addresses live in `config/applications.php`, and
+  `config/cors.php` derives its allowed origins from it.** Computing the list
+  rather than writing it out twice is what stops a fifth application being added
+  and forgotten; `CrossOriginRequestsTest` asserts the two agree and that there
+  are four. Origins, never patterns and never `*` — a wildcard would let any
+  site on the internet call this API with a token. The same host on a different
+  port is a different origin, and there is a test for that too.
+- **`packages/*/src/generated` is NOT in `.dockerignore`, and that is
+  deliberate.** It used to be, on the reasoning that the API image regenerates
+  it — which it cannot: the image installs `--no-dev` and `laravel/wayfinder` is
+  a `require-dev` dependency, so `api-client:generate` is not a command that
+  image can run. Nothing in the Dockerfile or entrypoint invokes it. The
+  exclusion therefore protected nothing and cost the front-end images their
+  ability to build at all, because `@fixmate/api-client` re-exports operations
+  that import from those files. `api-client:check` is what actually keeps the
+  client honest, and it runs in CI where PHP and the dev dependencies exist.
+- **A `<dockerfile>.dockerignore` is not an option here.** BuildKit only honours
+  one when the Dockerfile sits at the context root, and these Dockerfiles are
+  addressed with `-f apps/<name>/Dockerfile` against a root context. Verified: a
+  negation in `apps/user/Dockerfile.dockerignore` had no effect.
+- **An `ARG` before the first `FROM` is not in scope inside a stage.** It must be
+  re-declared in the stage that uses it, or it expands to nothing — the build
+  succeeds and `NEXT_PUBLIC_API_URL` simply is not set. `lib/api.ts` throws at
+  module load when the address is missing, which fails `next build` and is the
+  only reason this is caught at build time rather than in a browser.
+- **The access token is in a module variable and nowhere else.** Asserted live:
+  after a successful sign-in, `localStorage`, `sessionStorage` and
+  `document.cookie` are all empty. `lib/session.ts` is deliberately incomplete —
+  a reload signs you out until ticket 16 adds the renewal token.
+- **A front end must not reword a refusal.** `describeSignInFailure` passes the
+  back end's message through verbatim and rewrites only the two cases where the
+  back end said nothing (`network`, `contract`). The sign-in refusal is
+  deliberately indistinguishable between an unknown address, a wrong password
+  and a suspended account, so a second wording in the front end is a second
+  chance to leak which one it was.
+- **`lib/sign-in-failure.ts` imports `ApiError` from `@fixmate/api-client`, not
+  from `lib/api`.** `lib/api` builds the client at module load and throws
+  without an address, so importing it would make the wording module unloadable
+  and untestable. Same class object, so `instanceof` still matches.
 - **Each application carries its own `Dockerfile`, and the nginx config is
   shared.** The four images are built, pushed and rolled back separately, so a
   single parameterised Dockerfile at the root is the wrong shape.

@@ -42,11 +42,19 @@ export default function HomePage() {
                     What arrives next
                 </h2>
                 <ul className="flex list-disc flex-col gap-2 pl-5 text-slate-600 dark:text-slate-300">
-                    <li>Signing in against the back end&rsquo;s user door.</li>
                     <li>The shared session layer, with the token held in memory.</li>
                     <li>The application shell shared by all four applications.</li>
                 </ul>
             </section>
+
+            <p>
+                <a
+                    href="/sign-in/"
+                    className="font-medium text-sky-700 underline underline-offset-4 dark:text-sky-400"
+                >
+                    Sign in
+                </a>
+            </p>
         </main>
     );
 }
