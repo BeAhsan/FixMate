@@ -117,6 +117,24 @@ pipeline {
                     set -eu
                     docker build --target test -t "${CI_TEST_IMAGE}" .
                     docker run --rm "${CI_TEST_IMAGE}" vendor/bin/pint --test
+
+                    # The deploy script's own tests, in a bash 5 container.
+                    #
+                    # NOT the test image: it is php-fpm-alpine and has no bash at
+                    # all, and `deploy/deploy.sh` is a bash script. And not the
+                    # controller's shell either - it is socket-only, which is why
+                    # every other step here is a `docker run`.
+                    #
+                    # bash:5 rather than the host's shell is the load-bearing
+                    # part, not tidiness. macOS ships bash 3.2, where arithmetic on
+                    # an unset variable under `set -u` quietly yields 0; bash 4.4+
+                    # makes it a fatal "unbound variable". A `set -u` bug in the
+                    # deploy path is therefore invisible on a developer machine and
+                    # fatal on the VPS, and this is the only step that would catch
+                    # it before a deploy does. Mirrored by the deploy-script step
+                    # in .github/workflows/laravel.yml, which runs on ubuntu and
+                    # so already has bash 5.
+                    docker run --rm -v "$PWD":/w -w /w bash:5 bash deploy/test-deploy.sh
                 '''
             }
         }
