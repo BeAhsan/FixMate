@@ -605,6 +605,27 @@ never enter an image layer.
 - **`next build` rewrites `apps/user/tsconfig.json`** — it set `jsx` to
   `react-jsx` and added `.next/dev/types/**/*.ts` to `include`. That is expected
   and should not be reverted.
+- **`next build` is `next build --webpack` in all four applications, and the flag
+  is load-bearing.** Turbopack is Next 16's default bundler and it fails here with
+  `Cannot find module '../lightningcss.darwin-arm64.node'`, from
+  `node_modules/@tailwindcss/node/node_modules/lightningcss/node/index.js`. The
+  four builds fail and the build script reports nothing that points at the cause.
+  - **It is not the `node_modules` trap above.** `rm -rf node_modules && npm ci`
+    was tried and the failure persisted.
+  - **It is not Node.** `node -e "require('lightningcss-darwin-arm64')"` loads the
+    same binding successfully; only Turbopack's resolution fails.
+  - **An npm `overrides` entry pinning `lightningcss` does not help** — npm keeps
+    the nested copy, and the build fails identically.
+  - **Verified pre-existing**, by stashing the working tree and building on a clean
+    checkout. It is not caused by whatever change is in front of you.
+  - With `--webpack`, all four compile, export to `apps/*/out` with their own
+    `data-export-marker`, and the compiled CSS still contains `max-w-5xl`, which is
+    the check `apps/user/Dockerfile` greps for. The image builds and serves.
+  - The cost is Turbopack's build speed, and the flag is in the four `package.json`
+    build scripts rather than in a wrapper, so a reader comparing them to a
+    Next.js default has to look twice. That is the price, and it is cheaper than a
+    build that does not run. Revisit when Turbopack can resolve a nested optional
+    native dependency, and check all four export and the CSS grep before removing it.
 - **`apps/README.md` is load-bearing twice over:** `apps/` cannot be tracked
   empty, and it is where the per-application contract and the `out/` trap are
   written down. Do not treat it as a stray file.

@@ -4,7 +4,7 @@
     "private": true,
     "description": "The end user's application: a static export served by nginx, with no application server behind it.",
     "scripts": {
-        "build": "next build",
+        "build": "next build --webpack",
         "typecheck": "tsc --noEmit",
         "test": "vitest run"
     },
