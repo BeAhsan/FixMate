@@ -295,6 +295,76 @@ never enter an image layer.
 
 ## Deploy mechanics worth not breaking
 
+- **The deploy path ships as a set of five, and one tag names all five.**
+  `deploy/deploy.sh` takes a single argument — the app image — and *derives* the
+  four front-end references from it by the same rule the `Jenkinsfile` uses to
+  build them: same registry, same owner, same tag, last path segment replaced.
+  Five arguments would let the pipeline hand over a set that does not belong to
+  one release, and nothing would object. Change the naming rule in one file and
+  the other has to change too; `deploy/test-deploy.sh` asserts the two agree.
+- **A front end's image is `user-app`; its directory is `apps/user`.** They
+  differ only by an `-app` suffix, which is exactly why they get confused — the
+  first version of the pipeline's build loop derived the directory from the image
+  name and failed with `lstat apps/user-app: no such file or directory` on the
+  first front end, *after* the back end had been pushed under a tag that was then
+  half a release. The pairs are written out explicitly for that reason.
+- **The `:latest` tag is computed per image, never stored once and reused.** A
+  single variable holding the app's whole reference, reused across the five
+  builds, pushes all four front ends to the *app's* `:latest` — four images
+  contending for one name, and the app's `:latest` left holding whichever front
+  end built last.
+- **macOS ships bash 3.2 and the VPS runs bash 5, and the difference is a
+  production outage.** Under `set -u`, bash 4.4+ treats arithmetic on an unset
+  variable as fatal (`attempt: unbound variable`); bash 3.2 quietly yields 0. An
+  uninitialised counter in `wait_for_component` therefore worked perfectly on a
+  Mac and aborted the deploy on the first poll that reached it. **Anything in
+  `deploy/` must be tested under bash 5**, which is why CI runs
+  `deploy/test-deploy.sh` in a `bash:5` container — the test image is
+  `php-fpm-alpine` and has no bash at all.
+- **`deploy/deploy.sh` is safe to source, and the siblings do.** It returns
+  early when `FIXMATE_SOURCE_ONLY=1`, so `rollback.sh` and `status.sh` reuse its
+  component-to-variable mapping instead of copying it. The guard must be a
+  `return`, not an `exit`: an `exit` works perfectly for `bash rollback.sh` and
+  silently kills anything that sourced it. A second copy of that mapping is how a
+  rollback restores four front ends and forgets the fifth.
+- **`while read` silently skips a final line with no trailing newline.** So a
+  record written by one script can be invisible to the reader in the next, and
+  `status.sh` came to report agreement over four components while claiming five.
+  The fix is to normalise the input (`printf '%s\n' "$(cat file)"`), **not** the
+  tempting `|| [ -n "$var" ]` guard — `read` at EOF does not clear its variables,
+  so that guard stays true forever and the script hangs. It was written, hung, and
+  was replaced.
+- **`declare -a X` with `X[some-name]` is an indexed array**, so the subscript is
+  evaluated as arithmetic and dies with `some-name: unbound variable` under
+  `set -u`. `declare -A` is the right tool and is bash 4+, which macOS lacks —
+  so a script using it cannot be run, let alone rehearsed, on a Mac. Look the
+  value up in newline-separated text with a function instead.
+- **`pull_policy: always` means a local `docker compose up` of locally-built
+  images fails** with `pull access denied`. Correct on the server, where every
+  image comes from the registry; use `--pull never` to rehearse.
+- **The health check inside `deploy.sh` uses `127.0.0.1`, so the script must run
+  on the host.** In a container that address is the container's own loopback:
+  every probe misses and all five components are reported unreachable while they
+  are demonstrably serving. A run in a container failed on `app` first and never
+  reached the front end that was genuinely broken.
+- **Rehearsing the deploy needs a registry, and `registry:2` is enough.** Tag and
+  push the five locally, then run the real `deploy.sh` against a real
+  `docker-compose.prod.yml`, a real MySQL and a real Redis. A deliberately broken
+  component — a plain `nginx:alpine` with its `index.html` removed — is a
+  realistic "wrong image" failure, and it is what proved the failure names the
+  component, dumps its logs, rolls the whole set back, leaves `.current-release`
+  untouched and does not append the failed release to the history.
+- **`deploy/status.sh` exists because a rollback reads the record, not the
+  containers.** It prints what is live, what is on record, and whether they
+  agree — a drifted record means something changed the running set outside the
+  deploy path, and the next rollback would restore a set that was never the one
+  that broke. Demonstrated both ways: a component whose recorded version differs
+  from the running one, and a recorded component with no container.
+- **The registry name lives in three files** — `Jenkinsfile` `IMAGE_NAME`,
+  `deploy/env.example` `APP_IMAGE`, `deploy/jenkins/secrets/config.example`
+  `IMAGE_REPO` — and they are edited by hand at different times. Changing one
+  gives a pull that fails with a 403 naming none of them. The test suite asserts
+  all three agree, and that the repository *path* agrees, not just the host.
 - **Jenkins rsyncs only `docker-compose.prod.yml` and `deploy/`** into
   `/opt/fixmate`. It stages both into one temp directory and syncs *that*, and the
   staging form is load-bearing: `rsync --delete` applies within each source

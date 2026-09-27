@@ -21,9 +21,22 @@ DEPLOY_SCRIPT="${SCRIPT_DIR}/deploy.sh"
 pass=0
 fail=0
 
-ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; pass=$((pass + 1)); }
-bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$1"; [ $# -gt 1 ] && printf '         expected: %s\n         actual:   %s\n' "$2" "$3"; fail=$((fail + 1)); }
-group() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+# Each ends in `return 0` on purpose. Sourcing deploy.sh leaves `set -e` active in
+# this shell, and a reporter that ends on a false test - which `bad` does whenever
+# it is called with one argument, because `[ $# -gt 1 ]` is then the last command -
+# would abort the whole suite. The first failing test would take every test after it
+# with it and the run would report nothing at all, which reads as a passing suite
+# rather than a broken one. A reporter that can kill the run is not a reporter.
+ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; pass=$((pass + 1)); return 0; }
+bad()  {
+    printf '  \033[31mFAIL\033[0m %s\n' "$1"
+    if [ $# -gt 2 ]; then
+        printf '         expected: %s\n         actual:   %s\n' "$2" "$3"
+    fi
+    fail=$((fail + 1))
+    return 0
+}
+group() { printf '\n\033[1m%s\033[0m\n' "$1"; return 0; }
 
 # Source the script's definitions without running the deploy.
 FIXMATE_SOURCE_ONLY=1
@@ -395,6 +408,178 @@ next_few="$(sed -n "$((guard_line + 1)),$((guard_line + 2))p" "$DEPLOY_SCRIPT" |
 [ "$next_few" = "return0fi" ] \
     && ok "the source guard returns rather than exits" \
     || bad "the source guard" "return 0 / fi" "got: $next_few"
+
+# ---------------------------------------------------------------------------
+group 'the pipeline pushes what the deploy pulls'
+
+# The most important invariant across the two files, and the one whose failure is
+# worst. The Jenkinsfile builds and pushes four front-end images; deploy.sh
+# derives the four names it pulls from the app reference. If those two rules ever
+# disagree, the deploy fails on a pull - loudly, which is the good case - or, if
+# only the tags drift, it succeeds and serves a set that was never built together.
+# So the naming is asserted here rather than left to a read-through.
+
+REPO_ROOT="${SCRIPT_DIR}/.."
+JENKINSFILE="${REPO_ROOT}/Jenkinsfile"
+if [ ! -f "$JENKINSFILE" ]; then
+    bad "Jenkinsfile exists" "the file" "missing"
+else
+    # The rule, as the pipeline states it.
+    if grep -q 'REPO="\${IMAGE_NAME%/\*}"' "$JENKINSFILE"; then
+        ok "the pipeline derives the repository prefix from IMAGE_NAME"
+    else
+        bad "the pipeline's naming rule" 'REPO="${IMAGE_NAME%/*}"' "not found"
+    fi
+
+    # And the four names the pipeline builds must be exactly the four deploy.sh
+    # knows about, in the same spelling. A rename on one side only is the failure
+    # this catches.
+    pipeline_names="$(grep -oE '[a-z-]+:[a-z-]+-app' "$JENKINSFILE" | awk -F: '{printf "%s%s", sep, $2; sep=" "}')"
+    deploy_names="$(printf '%s\n' $COMPONENTS | grep -v '^app$' | tr '\n' ' ' | sed 's/ $//')"
+    [ -n "$pipeline_names" ] && [ "$pipeline_names" = "$deploy_names" ] \
+        && ok "both sides name the same four front ends" \
+        || bad "the four front-end names" "'$deploy_names'" "the pipeline builds '$pipeline_names'"
+
+    # Every paired directory must actually hold a Dockerfile. The image is
+    # `user-app` and the directory is `apps/user`; the two differ only by an
+    # `-app` suffix, which is the same thing as saying they are easy to confuse.
+    # Deriving one from the other produced "lstat apps/user-app: no such file or
+    # directory" on the very first front end - after the back end had already
+    # been pushed under a tag that was then half a release.
+    for pair in $(grep -oE '(^|[[:space:]])[a-z-]+:[a-z-]+-app' "$JENKINSFILE" | tr -d ' ' | sort -u); do
+        dir="${pair%%:*}"
+        case "$dir" in
+            user|worker|admin|super-admin)
+                if [ -f "${REPO_ROOT}/apps/${dir}/Dockerfile" ]; then
+                    ok "apps/${dir}/Dockerfile exists for ${pair#*:}"
+                else
+                    bad "apps/${dir}/Dockerfile" "to exist" "missing"
+                fi
+                ;;
+        esac
+    done
+
+    # And apps/ must hold exactly the four applications, so a fifth cannot be
+    # half-registered: present on disk and absent from the pipeline.
+    app_dirs="$(cd "${REPO_ROOT}/apps" && ls -d */ 2>/dev/null | tr -d '/' | sort | tr '\n' ' ' | sed 's/ $//')"
+    [ "$app_dirs" = "admin super-admin user worker" ] \
+        && ok "apps/ holds exactly the four applications" \
+        || bad "the applications on disk" "'admin super-admin user worker'" "'$app_dirs'"
+
+
+    # The moving :latest tag has to reach all five. A single variable holding the
+    # app's whole reference, reused across the five builds, pushes all four front
+    # ends to the app's latest tag - four images contending for one name, and the
+    # app's :latest left holding whichever front end built last. That is a
+    # one-line slip with a five-image consequence, so the shape is asserted.
+    if grep -q '\$LATEST_TAG' "$JENKINSFILE"; then
+        bad "the latest tag" "a per-image derivation" "a shared \$LATEST_TAG is still used"
+    else
+        ok "there is no shared LATEST_TAG reused across the five builds"
+    fi
+
+    if [ "$(grep -c 'latest_tag_for' "$JENKINSFILE")" -ge 3 ]; then
+        ok "latest_tag_for is defined and called per image"
+    else
+        bad "latest_tag_for usage" "a definition and a call per image" \
+            "$(grep -c 'latest_tag_for' "$JENKINSFILE") occurrence(s)"
+    fi
+
+    # The back end's address is baked in at build time, so a blank parameter has
+    # to fail the build rather than be passed through - a blank value throws
+    # inside the image, and omitting it silently falls back to localhost, which
+    # ships four front ends pointing at the developer's own machine.
+    if grep -q 'if \[ -z "\$API_URL" \]' "$JENKINSFILE"; then
+        ok "a blank API_URL fails the build"
+    else
+        bad "API_URL" "an explicit blank check" "not found"
+    fi
+
+    # The build context for a front end is the repository root, never the
+    # application directory: the workspace hoists node_modules to the root and
+    # `npm ci` needs the lockfile naming every member, neither of which exists
+    # inside apps/<dir>. So -f names the Dockerfile and the context stays '.'.
+    if grep -q '\-\-file "apps/\$dir/Dockerfile"' "$JENKINSFILE" \
+       && grep -A6 '\-\-file "apps/\$dir/Dockerfile"' "$JENKINSFILE" | grep -qE '^\s+\.$'; then
+        ok "each front end builds with the repository root as its context"
+    else
+        bad "the front-end build context" "the root, not apps/<dir>" "not found"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+group 'the registry name agrees in all three places'
+
+# The registry lives in three files, and they are edited by hand at different
+# times by different people. Changing one is the failure this catches, and the
+# symptom is confusing rather than clean: the pipeline pushes to one place, the
+# VPS pulls from another, and the deploy fails on a pull with a 403 that says
+# nothing about which file is wrong.
+#
+#   Jenkinsfile                                IMAGE_NAME
+#   deploy/env.example                         APP_IMAGE
+#   deploy/jenkins/secrets/config.example      IMAGE_REPO
+registry_in() {
+    # The registry is the first path segment of a full image reference.
+    #
+    # Quotes are stripped because the three files do not agree on whether to use
+    # them: the Jenkinsfile writes `IMAGE_NAME = 'ghcr.io/...'` while the two under
+    # deploy/ are unquoted. Left in, the leading quote makes it look like a
+    # different registry from the other two - which is the very disagreement this
+    # check exists to catch, reporting itself.
+    printf '%s' "$1" | sed -e 's|^[[:space:]]*[^=]*=[[:space:]]*||' -e 's|^[[:space:]]*||' \
+        | tr -d "\"'<>" | cut -d/ -f1
+}
+
+declare_pairs=""
+for spec in "Jenkinsfile:IMAGE_NAME" \
+            "deploy/env.example:APP_IMAGE" \
+            "deploy/jenkins/secrets/config.example:IMAGE_REPO"; do
+    file="${spec%%:*}"; var="${spec#*:}"
+    path="${REPO_ROOT}/${file}"
+
+    if [ ! -f "$path" ]; then
+        bad "${file} exists" "the file" "missing"
+        continue
+    fi
+
+    # `|| true` on the pipeline, not just the grep: `set -o pipefail` is active
+    # (deploy.sh sets it, and sourcing it sets it here), so a grep that matches
+    # nothing fails the whole pipeline even though `head` succeeded - and with
+    # `set -e` that ends the suite on the spot, silently. A test file that cannot
+    # report a failure is worse than no test file.
+    #
+    # [[:space:]]* around the `=` because the Jenkinsfile writes
+    # `IMAGE_NAME = 'ghcr.io/...'` while the two files under deploy/ write
+    # `APP_IMAGE=ghcr.io/...`. Requiring no spaces finds only two of the three.
+    value="$(grep -E "^[[:space:]]*${var}[[:space:]]*=" "$path" | head -1 || true)"
+    if [ -z "$value" ]; then
+        bad "${file} defines ${var}" "a value" "not found"
+        continue
+    fi
+
+    host="$(registry_in "$value")"
+    ok "${file} ${var} -> ${host}"
+    declare_pairs="${declare_pairs}${host}
+"
+done
+
+# All three must name the same host, and there must be three of them.
+distinct="$(printf '%s' "$declare_pairs" | grep -c . || true)"
+uniq_count="$(printf '%s' "$declare_pairs" | grep . | sort -u | grep -c . || true)"
+[ "$distinct" = "3" ] && [ "$uniq_count" = "1" ] \
+    && ok "all three name the same registry" \
+    || bad "the registry name" "one host across three files" \
+           "$distinct file(s) naming $uniq_count distinct host(s): $(printf '%s' "$declare_pairs" | grep . | sort -u | tr '\n' ' ')"
+
+# The front-end images the pipeline builds have to be reachable from the same
+# place the VPS pulls the back end from, so the repository prefix has to match
+# too, not just the host.
+jenkins_repo="$(grep -E "^[[:space:]]*IMAGE_NAME[[:space:]]*=" "${REPO_ROOT}/Jenkinsfile" | head -1 | sed 's|.*=[[:space:]]*||' | tr -d "\"'" | cut -d/ -f1-3)"
+env_repo="$(grep -E "^[[:space:]]*APP_IMAGE[[:space:]]*=" "${REPO_ROOT}/deploy/env.example" | head -1 | sed 's|.*=[[:space:]]*||' | tr -d "\"'" | cut -d/ -f1-3)"
+[ -n "$jenkins_repo" ] && [ "$jenkins_repo" = "$env_repo" ] \
+    && ok "the repository path agrees too (${jenkins_repo})" \
+    || bad "the repository path" "'$env_repo' in env.example" "'$jenkins_repo' in the Jenkinsfile"
 
 # ---------------------------------------------------------------------------
 printf '\n\033[1m%d passed, %d failed\033[0m\n' "$pass" "$fail"
