@@ -68,8 +68,9 @@ The API is on <http://localhost:8000>, MySQL on `127.0.0.1:3306` and Redis on
 Notes:
 
 - The bind mount shadows the image's `vendor/`, so `composer install` must be
-  run on the host. There are no front-end assets to build, so there is no
-  `npm run build` step.
+  run on the host. The API image compiles no front end, so it has no
+  `npm run build` step — the front-end applications build separately, each into
+  its own image.
 - Config is not cached in development, so `.env` and `config/` changes apply on
   the next request.
 
@@ -82,7 +83,9 @@ pipeline already installs with it.
 
 | Path | What it is |
 | --- | --- |
-| `apps/` | The four deployed front ends. Empty of applications for now — see `apps/README.md`. |
+| `apps/` | The four deployed front ends. `apps/user` exists; the other three follow. See `apps/README.md`. |
+| `apps/*/Dockerfile` | One per application. Each builds a static export and serves it with nginx. |
+| `docker/front-end/` | The nginx config every front-end image shares. |
 | `packages/` | Shared code the applications import: `packages/api-client` so far. |
 | `package.json` | The workspace root. The `workspaces` globs are `apps/*` and `packages/*`. |
 

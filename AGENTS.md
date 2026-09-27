@@ -8,9 +8,9 @@ the code, the code wins and the README is named as the stale one.
 - A Laravel 13 app (`laravel/framework` 13.33) that is a **JSON API and nothing
   else**. There is no Blade, no Vite, and no route that renders a page:
   `routes/api.php` is the only route file and `resources/` does not exist. npm
-  exists (a workspaces root, one shared package) but there is no front-end
-  *application* in this repository yet — do not assume a feature area, model or
-  endpoint exists beyond the one end-user sign-in route.
+  exists as a workspaces root and there is one front-end *application*
+  (`apps/user`, a Next.js static export) — do not assume a feature area, model
+  or endpoint exists beyond the one end-user sign-in route.
 - **The actual work in this repo is infrastructure.** Dockerfile, `docker/`,
   `docker-compose*.yml`, `Jenkinsfile` and `deploy/` are the substance; the app
   is the payload. Read those before forming an opinion about the project.
@@ -293,16 +293,102 @@ never enter an image layer.
   with the `api` middleware group under Laravel's default `api` prefix — still
   not versioned. The spec wants a versioned prefix, but that decision belongs
   to whichever ticket adds the first real route group, not to this one.
-- **There are no front-end *applications* in this repository yet.** There is a
-  root `package.json` (npm workspaces: `apps/*`, `packages/*`), an `apps/`
-  directory holding only a README, and one shared package,
-  `packages/api-client`. The four Next.js applications arrive later and populate
-  `apps/`. Still no `resources/`, no `public/build`, no Vite — and **still do not
-  add a front-end build step to the image**, which builds one image that serves
-  three roles from the same workspace.
-- **`apps/` exists only because git cannot track an empty directory.** That is
-  what `apps/README.md` is for; do not treat it as a stray file or delete it
-  expecting `apps/` to survive. Ticket 14 adds the first application.
+- **There is one front-end application: `apps/user`.** There is a root
+  `package.json` (npm workspaces: `apps/*`, `packages/*`), one shared package
+  `packages/api-client`, and one application. The other three arrive with
+  tickets 15 to 19 and populate `apps/`. Still no `resources/`, no
+  `public/build`, no Vite — and **still do not add a front-end build step to
+  the API image**, which builds one image that serves three roles.
+- **`apps/user` builds to a static export, and its image has no Node in it.**
+  `next.config.ts` sets `output: 'export'`, so `next build` writes `out/` and
+  `apps/user/Dockerfile` copies that into an nginx image. The build context is
+  the **repository root** (`docker build -f apps/user/Dockerfile .`), not
+  `apps/user`, because the workspace hoists `node_modules` to the root and
+  `npm ci` needs the lockfile naming every member. Inside that image the build
+  runs `npm run build --workspace=@fixmate/user-app` and **not** the root
+  `npm run build`, because the root script starts with
+  `php artisan api-client:generate` and there is deliberately no PHP in a
+  front-end image. `packages/api-client/src` is copied into the build stage;
+  the client has no build step of its own because its `main` and `types` point at
+  `./src/index.ts`, so Next compiles it from source.
+- **The four application addresses live in `config/applications.php`, and
+  `config/cors.php` derives its allowed origins from it.** Computing the list
+  rather than writing it out twice is what stops a fifth application being added
+  and forgotten; `CrossOriginRequestsTest` asserts the two agree and that there
+  are four. Origins, never patterns and never `*` — a wildcard would let any
+  site on the internet call this API with a token. The same host on a different
+  port is a different origin, and there is a test for that too.
+- **`packages/*/src/generated` is NOT in `.dockerignore`, and that is
+  deliberate.** It used to be, on the reasoning that the API image regenerates
+  it — which it cannot: the image installs `--no-dev` and `laravel/wayfinder` is
+  a `require-dev` dependency, so `api-client:generate` is not a command that
+  image can run. Nothing in the Dockerfile or entrypoint invokes it. The
+  exclusion therefore protected nothing and cost the front-end images their
+  ability to build at all, because `@fixmate/api-client` re-exports operations
+  that import from those files. `api-client:check` is what actually keeps the
+  client honest, and it runs in CI where PHP and the dev dependencies exist.
+- **A `<dockerfile>.dockerignore` is not an option here.** BuildKit only honours
+  one when the Dockerfile sits at the context root, and these Dockerfiles are
+  addressed with `-f apps/<name>/Dockerfile` against a root context. Verified: a
+  negation in `apps/user/Dockerfile.dockerignore` had no effect.
+- **An `ARG` before the first `FROM` is not in scope inside a stage.** It must be
+  re-declared in the stage that uses it, or it expands to nothing — the build
+  succeeds and `NEXT_PUBLIC_API_URL` simply is not set. `lib/api.ts` throws at
+  module load when the address is missing, which fails `next build` and is the
+  only reason this is caught at build time rather than in a browser.
+- **The access token is in a module variable and nowhere else.** Asserted live:
+  after a successful sign-in, `localStorage`, `sessionStorage` and
+  `document.cookie` are all empty. `lib/session.ts` is deliberately incomplete —
+  a reload signs you out until ticket 16 adds the renewal token.
+- **A front end must not reword a refusal.** `describeSignInFailure` passes the
+  back end's message through verbatim and rewrites only the two cases where the
+  back end said nothing (`network`, `contract`). The sign-in refusal is
+  deliberately indistinguishable between an unknown address, a wrong password
+  and a suspended account, so a second wording in the front end is a second
+  chance to leak which one it was.
+- **`lib/sign-in-failure.ts` imports `ApiError` from `@fixmate/api-client`, not
+  from `lib/api`.** `lib/api` builds the client at module load and throws
+  without an address, so importing it would make the wording module unloadable
+  and untestable. Same class object, so `instanceof` still matches.
+- **Each application carries its own `Dockerfile`, and the nginx config is
+  shared.** The four images are built, pushed and rolled back separately, so a
+  single parameterised Dockerfile at the root is the wrong shape.
+  `docker/front-end/default.conf` is shared instead, on the same reasoning that
+  the API image shares `docker/nginx/default.conf`. When adding an application,
+  copy `apps/user/`, do not fork the nginx config.
+- **`nginx -t` is not enough to prove a config is used; `nginx -T` is.** `-t`
+  only parses, so a config written to a directory the base image never includes
+  passes it. The official `nginx` image includes `/etc/nginx/conf.d/*.conf`;
+  `php:*-fpm-alpine` uses `/etc/nginx/http.d/`. Getting that wrong produced an
+  image that started, reported healthy, and served nginx's welcome page instead
+  of the export. `apps/user/Dockerfile` therefore greps `nginx -T` for the
+  document root, and the check is demonstrated by rebuilding with the wrong
+  path.
+- **A `location /_next/static/` block needs `^~` or it never runs.** nginx
+  evaluates regex locations before prefix locations, so without the modifier a
+  fingerprinted `app.css` matches the generic `\.(css|js|…)$` block and gets
+  seven days instead of `1y immutable` — the exact files the block exists for.
+- **`apps/*/out` is in `.gitignore` as a scoped pattern, and must stay scoped.**
+  A gitignore pattern with no slash matches at *any* depth, so a bare `out`
+  would untrack the root `out/` rsync fixture. `.dockerignore` reaches the same
+  conclusion by a different rule: there a slashless pattern matches the root
+  only. The fixture is deliberately not in `.dockerignore` and travels into the
+  API image; that is expected, and adding a bare `out` is how it would stop.
+- **The application's own tests guard the export contract, and one of them
+  caught a hole in itself.** `apps/user/test/static-export.test.ts` fails the
+  build-relevant mistakes (dynamic route segments, `cookies()`/`headers()`)
+  without needing a build to have run. Its first version checked only the top
+  level of `app/` and passed with `app/bookings/[id]` in place. Demonstrating a
+  guard by breaking the thing it guards is not optional here.
+- **`next-env.d.ts` and `*.tsbuildinfo` are gitignored, not committed.** Both
+  are written by `next build` and both reference `.next/`, so committing them
+  breaks `npm run typecheck` on a clean checkout that has never been built.
+- **`next build` rewrites `apps/user/tsconfig.json`** — it set `jsx` to
+  `react-jsx` and added `.next/dev/types/**/*.ts` to `include`. That is expected
+  and should not be reverted.
+- **`apps/README.md` is load-bearing twice over:** `apps/` cannot be tracked
+  empty, and it is where the per-application contract and the `out/` trap are
+  written down. Do not treat it as a stray file.
 - **A file inside a workspace package can import the package by its own
   `@fixmate/*` name without the workspace link existing**, because Node,
   TypeScript and Vite all resolve a package's own name through its own `exports`
