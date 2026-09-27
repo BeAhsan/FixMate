@@ -8,6 +8,7 @@ use App\Application\IdentityAndAccess\Exceptions\AccountSuspended;
 use App\Application\IdentityAndAccess\Exceptions\InvalidCredentials;
 use App\Domain\IdentityAndAccess\Repositories\EndUserRepository;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
+use App\Domain\IdentityAndAccess\ValueObjects\AccountType;
 
 /**
  * Use case for end user sign-in.
@@ -64,7 +65,7 @@ class SignInEndUser
             userId: $user->id,
             name: $user->name,
             email: $user->email->value,
-            abilities: ['users:*'], // End user abilities
+            abilities: AccountType::User->abilities(),
         );
     }
 }

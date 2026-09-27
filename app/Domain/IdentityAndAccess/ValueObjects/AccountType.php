@@ -55,4 +55,55 @@ enum AccountType: string
     {
         return $this->value;
     }
+
+    /**
+     * The abilities a token issued for this account type carries.
+     *
+     * The one place abilities are decided. Previously each of the four sign-in
+     * use cases carried its own literal, which meant the platform's entire
+     * access model was four strings in four files with nothing to compare them
+     * against — a new account type would have added a fifth, and "an
+     * administrator cannot do what a super administrator can" would have been
+     * a convention rather than a fact.
+     *
+     * Note what an administrator does *not* get: the `accounts:*` family. That
+     * is the separation the spec asks for, and it is expressed by their absence
+     * here rather than by a check somewhere that a new account type could forget
+     * to pass through.
+     *
+     * @return list<string>
+     */
+    public function abilities(): array
+    {
+        return match ($this) {
+            self::User => ["{$this->value}:*"],
+            self::Worker => ["{$this->value}:*"],
+            self::Admin => ["{$this->value}:*"],
+            // The wildcard alone. It already subsumes the `accounts:*` family,
+            // so listing those names as well would be a second source of truth
+            // for the same reach: one that a test could read as authoritative
+            // and that a future rename would silently contradict. The names stay
+            // in Ability, where the middleware that requires them looks, and the
+            // wildcard is what carries them.
+            self::SuperAdmin => [Ability::WILDCARD],
+        };
+    }
+
+    /**
+     * Whether a token for this account type may perform an ability.
+     *
+     * The wildcard matches everything, exactly as Sanctum's own `*` does, so
+     * this agrees with what the middleware will actually decide rather than
+     * approximating it.
+     *
+     * @param  list<string>  $abilities
+     */
+    public function may(array $abilities, string $ability): bool
+    {
+        if (in_array(Ability::WILDCARD, $abilities, true)) {
+            return true;
+        }
+
+        return in_array($ability, $abilities, true);
+    }
 }
