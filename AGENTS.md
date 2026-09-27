@@ -135,8 +135,8 @@ a duplicate set back under colliding names. This repo owns `.opencode/skills/`.
 
 ## Commands
 
-Gate order matches the Jenkins `Verify` → `Test` stages — **Pint first**, then
-tests:
+Gate order matches the Jenkins `Verify` → `Test` → `Front end` stages — **Pint
+first**, then tests, then the front ends:
 
 ```sh
 vendor/bin/pint --dirty --format agent   # format what you touched
@@ -155,13 +155,15 @@ php artisan api-docs:check               # compare packages/api-client/openapi.j
 ```
 
 `api-client:check` is the check that catches a renamed route. Changing a route
-means changing `routes/api.php`, `packages/api-client/contract.json` and
+means changing `routes/api.php`, `packages/api-client/contract.json` and the
 `packages/api-client/src/operations.ts` together, or the check fails.
-`api-docs:check` is a *separate* command for `openapi.json`, and the separation
-is load-bearing: `contract.json` has no field for a security requirement, so
-nothing in `api-client:check` would notice a document describing a protected
-route as open. `api-docs:check` reads the route's own gathered middleware, so it
-does not trust the document's sentence about it. The TypeScript side:
+`api-docs:check` is a *separate* command for `openapi.json`, and the separation is
+load-bearing: `contract.json` has no field for a security requirement, so nothing
+in `api-client:check` would notice a document describing a protected route as
+open. `api-docs:check` reads the route's own gathered middleware, so it does not
+trust the document's sentence about it.
+
+The TypeScript side:
 
 ```sh
 npm install                             # once, from the root
@@ -170,10 +172,10 @@ npm run typecheck
 npm test
 ```
 
-`npm run build` is the single documented build for the whole workspace, and it
+`npm run build` is the single documented build for a developer on a host, and it
 is the only one worth memorising. It runs `php artisan api-client:generate`
-first, because `src/generated/` is not committed and nothing compiles without
-it, then every member's `build`.
+first, because `src/generated/` is not committed and nothing compiles without it,
+then every member's `build`.
 
 **It does not pass `--if-present`, unlike `typecheck` and `test`.** A member
 without a `build` script is a mistake, and `--if-present` would skip it and exit
@@ -183,6 +185,13 @@ script: "build"` and names the member. Do not "tidy" the flag away.
 
 `typecheck` and `test` keep `--if-present` deliberately: a package with no tests
 is legitimate.
+
+**CI does not use `npm run build`.** Both gates run
+`php artisan api-client:generate` as its own step and then
+`npm run build --workspaces`, because the root script's first line needs PHP and
+the build needs Node, and the Jenkins stage runs them in separate containers —
+`npm run build` there exits 127 with `php: not found`. The root command stays
+correct for a host, where both are installed.
 
 Both `npm run typecheck` and `npm run build` need
 `php artisan api-client:generate` to have happened, because `src/generated/` is
@@ -198,7 +207,24 @@ docker build --target test -t fixmate/app:ci . && docker run --rm fixmate/app:ci
 ```
 
 That target's `CMD` is `php artisan test`, so `docker run` with no argument runs
-the suite.
+the suite. The front-end stage is two containers, and the workspace has to be
+bind-mounted into both:
+
+```sh
+docker run --rm -v "$PWD":/w -w /w fixmate/app:ci php artisan api-client:generate
+docker run --rm -v "$PWD":/w -w /w -v fixmate-npm-cache:/root/.npm \
+    -e NEXT_PUBLIC_API_URL node:22-alpine \
+    sh -c 'npm ci && npm run typecheck && npm test && npm run build --workspaces'
+rm -rf packages/api-client/src/generated
+```
+
+**Running that on a Mac replaces your `node_modules` with Linux binaries.** The
+`node` container's `npm ci` writes musl builds over the host's darwin ones, and
+the next host-side `npm test` fails with `Cannot find native binding` from
+`rolldown`. Recover with `rm -rf node_modules && npm ci`. It is harmless on
+Jenkins, where the workspace is only ever used from inside Linux containers, and
+it is the price of the bind mount the stage needs — a socket-only controller
+cannot see the workspace at all.
 
 **Tests need no services.** `phpunit.xml` pins `DB_CONNECTION=sqlite` and
 `DB_DATABASE=:memory:`, so the suite never touches a real database. The local
@@ -207,11 +233,38 @@ is only what a host-side `php artisan serve` uses, because `.env` selects sqlite
 
 ### Two CI systems, one gate
 
-`.github/workflows/laravel.yml` and the Jenkins `Verify`/`Test` stages run the
-same checks — Pint, then the suite, on the same PHP version. It is a
-pull-request gate and nothing more: it does not build or push the image, because
-Jenkins pushes straight to `ghcr.io` from the controller. If you add a check, add
-it in both places or neither.
+`.github/workflows/laravel.yml` and the Jenkins `Verify`/`Test`/`Front end` stages
+run the same checks — Pint, the suite, both drift checks, and the four front
+ends' type-check, test and build — on the same PHP version. It is a pull-request
+gate and nothing more: it does not build or push the image, because Jenkins pushes
+straight to `ghcr.io` from the controller. If you add a check, add it in both
+places or neither.
+
+Three things about the front-end half that are easy to get wrong:
+
+- **The pull-request workflow has a separate `front-end` job**, not more steps in
+  the PHP one, so a front-end failure is reported as a front-end failure. It needs
+  `setup-php` as well as `setup-node`, which looks redundant and is not: the typed
+  client is generated by PHP and never committed, so nothing can typecheck without
+  it. It needs no `key:generate` — generation does not read `APP_KEY`.
+- **Jenkins runs the front ends in containers, with the workspace bind-mounted.**
+  The other stages are socket-only, but a `node` container cannot see the
+  workspace without a mount, and the workspace is where the generated client has
+  to land. The `node:22-alpine` container therefore mounts `$PWD` at `/w`, and the
+  stage removes `packages/api-client/src/generated` afterwards so the deploy
+  stages do not inherit build output.
+- **The front-end duplication rule is caught by the *PHP* job.**
+  `FrontEndApplicationsTest` asserts that no application contains a copy of the
+  sign-in flow or the shell, and it lives in `php artisan test` — so the two jobs
+  are not independent, and a front-end architectural regression surfaces as a
+  failing PHP job. That is where it belongs: the rule is repository-wide, and a
+  front-end test could only ever see its own application.
+
+Both gates were demonstrated failing, not just passing: a TypeScript error
+(`npm run typecheck`), a failing front-end test (`npm test`), a route that cannot
+be statically exported (the per-application test, then `npm run build`), a copied
+sign-in flow (`php artisan test`), and a route renamed without the contract
+(`api-client:check`, then a compile error naming the missing export).
 
 ### Dockerfile stages
 
