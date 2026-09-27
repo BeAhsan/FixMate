@@ -2,15 +2,10 @@
 
 namespace App\Providers;
 
-use App\Domain\IdentityAndAccess\ValueObjects\AccountType;
-use App\Models\Admin;
-use App\Models\SuperAdmin;
-use App\Models\User;
-use App\Models\Worker;
+use App\Infrastructure\IdentityAndAccess\AccountTypeRegistry;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\ServiceProvider;
-use InvalidArgumentException;
 
 /**
  * Teaches the password reset notification where the four reset pages live.
@@ -28,21 +23,14 @@ class PasswordResetServiceProvider extends ServiceProvider
     /**
      * The model behind each account type.
      *
-     * A map rather than a chain of `instanceof` checks in the callback, because
-     * it is the same list the account types come from and reading the two side
-     * by side is how a fifth store would be noticed. An unmapped model is a hard
-     * error rather than a default: guessing a store here would put a real reset
-     * link on the wrong application's page, and a working recovery flow for the
-     * wrong account is a failure that looks like a success.
+     * @deprecated Read it from AccountTypeRegistry instead. This map is kept as a
+     *             pointer so that the two lists cannot drift: the registry is now
+     *             the only copy, and this is where the password reset flow reads
+     *             it from.
      *
      * @var array<class-string<Model>, AccountType>
      */
-    private const ACCOUNT_TYPES = [
-        User::class => AccountType::User,
-        Worker::class => AccountType::Worker,
-        Admin::class => AccountType::Admin,
-        SuperAdmin::class => AccountType::SuperAdmin,
-    ];
+    private const ACCOUNT_TYPES = [];
 
     /**
      * Register any application services.
@@ -58,10 +46,7 @@ class PasswordResetServiceProvider extends ServiceProvider
     public function boot(): void
     {
         ResetPassword::createUrlUsing(function (Model $notifiable, string $token): string {
-            $accountType = self::ACCOUNT_TYPES[$notifiable::class]
-                ?? throw new InvalidArgumentException(
-                    'No account type owns '.$notifiable::class.', so no password reset link can be addressed to it.'
-                );
+            $accountType = AccountTypeRegistry::for($notifiable);
 
             $url = (string) config('password-reset.urls.'.$accountType->broker());
 
