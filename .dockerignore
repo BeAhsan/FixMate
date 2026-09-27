@@ -65,10 +65,10 @@ Thumbs.db
 # reads them out of this image.
 packages/*/src/generated
 
-# Front-end build output. Nothing produces these yet - ticket 14 adds the first
-# application, and the three after it - so they are excluded now while the list
-# is still a list and nothing is being shipped. Listed ahead of the applications
-# rather than discovered once an image is 200MB larger than it should be.
+# Front-end build output. `apps/user` produces the first two of these; the
+# other three applications arrive with tickets 15 to 19 and need no change here
+# unless they adopt a different bundler. Listed ahead of the applications rather
+# than discovered once an image is 200MB larger than it should be.
 #
 #   **/.next            next dev and next build, per application
 #   apps/*/out          next build with output: 'export' (a static export)

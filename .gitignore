@@ -41,5 +41,29 @@ node_modules
 # one failure this package exists to prevent.
 packages/*/src/generated
 
+# Front-end build output.
+#
+# Scoped to `apps/*` and `packages/*`, and the `out` line is the load-bearing
+# one. A gitignore pattern with no slash matches at ANY depth, so a bare `out`
+# would also match the `out/` at the repository root - which is not front-end
+# output. It is an rsync test fixture committed to prove the `--delete` staging
+# fix in the `Jenkinsfile`, and it would be silently untracked. The static
+# export that collides with it is `apps/user/out`, per application, and that is
+# the path below. The same trap is spelled out in .dockerignore, where the
+# matching rule behaves differently again.
+apps/*/.next
+apps/*/out
+packages/*/.next
+packages/*/out
+
+# Written by `next build` into the application's tsconfig cache.
+apps/*/*.tsbuildinfo
+
+# Written by `next build`, and it references `./.next/types/...`, which is also
+# build output. Committing it therefore breaks `npm run typecheck` on a clean
+# checkout, before anything has been built. The same is true of create-next-app's
+# own template.
+apps/*/next-env.d.ts
+
 # Test runner caches
 .vite
