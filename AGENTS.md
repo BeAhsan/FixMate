@@ -387,6 +387,24 @@ never enter an image layer.
   different navigations for three ability sets: a super administrator sees
   everything, an administrator loses the `accounts:read` section, a customer has
   none of it.
+- **`docker-compose.prod.yml` runs the four front ends as four services** on an
+  `x-front-end` anchor, so the shared parts (restart policy, health check, memory
+  limit, network) are written once. Each publishes one address read from `.env`,
+  so adding or renaming one is a single edit. No `env_file` and no `depends_on`:
+  a front end is a directory of files that reads nothing at run time and does not
+  touch MySQL.
+- **A front end takes up to ~90 seconds to be reported unhealthy.** `interval:
+  30s` with `retries: 3` means three consecutive failures, and it took 90s of
+  real time to flip. Verified by removing a served `index.html` and watching the
+  check record `exit=1` three times before the state changed. **The deploy
+  script's health wait must allow at least that**, or it will declare a failure
+  before Docker has noticed one. This was measured, not estimated — an early
+  poll at 50s wrongly looked like the check was not working.
+- **`pull_policy: always` blocks a local rehearsal.** Correct on the server, where
+  every image comes from the registry, and a local `docker compose up` of
+  locally-built images fails with `pull access denied`. Use `--pull never` to
+  rehearse. Recorded because the rehearsal is how the set-deploy gets tested
+  before it touches the VPS.
 - **`apps/user` builds to a static export, and its image has no Node in it.**
   `next.config.ts` sets `output: 'export'`, so `next build` writes `out/` and
   `apps/user/Dockerfile` copies that into an nginx image. The build context is

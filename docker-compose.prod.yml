@@ -6,7 +6,13 @@
 #
 #   docker compose -f docker-compose.prod.yml up -d
 #
-# MySQL and Redis publish no ports. Only the app publishes one.
+# MySQL and Redis publish no ports. The app publishes one, and each of the four
+# front ends publishes one of its own.
+#
+# The four front ends are independent of the app: nothing here stops or starts
+# with it, and none of them can affect whether the API is serving. The deploy
+# script treats all five as one set, and that is a decision the script makes
+# rather than a coupling the compose file expresses.
 
 name: fixmate
 
@@ -34,6 +40,52 @@ x-app-depends: &app-depends
     condition: service_healthy
   redis:
     condition: service_healthy
+
+# ---------------------------------------------------------------------------
+# The four front ends
+# ---------------------------------------------------------------------------
+# One service per application, each serving a static export with nginx. They
+# share this anchor rather than repeating themselves, because the differences
+# between the four are two values each - the image and the published port - and
+# everything else is the same by construction.
+#
+# Three deliberate omissions:
+#
+#   * No `env_file`. A front end is a directory of files. It reads no
+#     environment variable at run time, and the one variable it does have
+#     (NEXT_PUBLIC_API_URL) was inlined into the export at build time. Passing
+#     the file in would suggest otherwise, and the next person would add a
+#     runtime setting that silently does nothing.
+#
+#   * No `depends_on`. Nothing here talks to MySQL or Redis. Expressing a
+#     dependency that does not exist would make a front end's start order look
+#     coupled to the database when it is not.
+#
+#   * No `command`. The image's own CMD runs nginx. A front end has no
+#     application server to start.
+x-front-end: &front-end
+  pull_policy: always
+  restart: unless-stopped
+  # A front end is nginx serving files: tens of megabytes of RSS, not a PHP
+  # runtime. 96M is generous for that and the limit is here so one front end
+  # cannot starve the others on a small host.
+  deploy:
+    resources:
+      limits:
+        memory: 96M
+  # Asked of the export's own index.html rather than of a process, so it reports
+  # healthy only when the application is actually being served. A container
+  # whose nginx is up but serving the wrong directory would pass a port check.
+  healthcheck:
+    test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/up"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 5s
+  # The existing network, not a second one. A front end on its own network
+  # could not be reached by a reverse proxy on the app's, which is the most
+  # likely thing to be added next.
+  networks: [fixmate]
 
 services:
   app:
@@ -135,6 +187,48 @@ services:
       resources:
         limits:
           memory: 384M
+
+  # -------------------------------------------------------------------------
+  # The four front ends
+  # -------------------------------------------------------------------------
+  # Each publishes one address, and each address is one line in .env. Nothing
+  # here repeats a port, so adding or renaming an address is a single edit -
+  # which is user story 83, and the reason these are variables rather than
+  # literals.
+  #
+  # The four ports must differ from each other and from APP_PORT. `docker
+  # compose up` fails on a duplicate publish rather than picking one, so a
+  # collision is caught at the moment the stack starts rather than by one front
+  # end silently receiving another's traffic.
+  #
+  # Ordering matches config/applications.php on the back end, which is where the
+  # allowed-origins list gets these addresses from. The two lists must agree:
+  # a front end on an address the back end does not grant is a browser whose
+  # every request is refused by CORS.
+
+  user-app:
+    <<: *front-end
+    image: ${USER_APP_IMAGE:?set USER_APP_IMAGE in .env}
+    ports:
+      - "${USER_APP_PORT:-3000}:80"
+
+  worker-app:
+    <<: *front-end
+    image: ${WORKER_APP_IMAGE:?set WORKER_APP_IMAGE in .env}
+    ports:
+      - "${WORKER_APP_PORT:-3001}:80"
+
+  admin-app:
+    <<: *front-end
+    image: ${ADMIN_APP_IMAGE:?set ADMIN_APP_IMAGE in .env}
+    ports:
+      - "${ADMIN_APP_PORT:-3002}:80"
+
+  super-admin-app:
+    <<: *front-end
+    image: ${SUPER_ADMIN_APP_IMAGE:?set SUPER_ADMIN_APP_IMAGE in .env}
+    ports:
+      - "${SUPER_ADMIN_APP_PORT:-3003}:80"
 
   mysql:
     image: mysql:8.4
