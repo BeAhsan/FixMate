@@ -1,15 +1,20 @@
 import { signin as signinUser } from './generated/routes/users'
+import { me as meUser } from './generated/routes/users'
 import { signin as signinWorker } from './generated/routes/workers'
+import { me as meWorker } from './generated/routes/workers'
 import { signin as signinAdmin } from './generated/routes/admins'
 import { signin as signinSuperAdmin } from './generated/routes/super-admins'
 import { forgotPassword as forgotPasswordUser, resetPassword as resetPasswordUser } from './generated/routes/users'
 import { forgotPassword as forgotPasswordWorker, resetPassword as resetPasswordWorker } from './generated/routes/workers'
 import {
     forgotPassword as forgotPasswordAdmin,
+    me as meAdmin,
     resetPassword as resetPasswordAdmin,
+    show as showAdmin,
 } from './generated/routes/admins'
 import {
     forgotPassword as forgotPasswordSuperAdmin,
+    me as meSuperAdmin,
     resetPassword as resetPasswordSuperAdmin,
 } from './generated/routes/super-admins'
 import { array, number, object, string, type Schema } from './schema'
@@ -80,6 +85,50 @@ export interface ResetPasswordInput {
 /** What either half of a reset answers with. */
 export interface AcknowledgementResult {
     message: string
+}
+
+/**
+ * The signed-in account, as the application that asked sees it.
+ *
+ * One shape for all four account types, unlike the sign-in responses above which
+ * nest the account under a per-type key. The difference is deliberate and it is
+ * the reason `account_type` is here at all: at sign-in each application already
+ * knows what it is, so a key named after the store is a convenience. "Who am I"
+ * is asked by a caller that may be holding the wrong token, and the answer has to
+ * be able to say that the thing answering is a customer when a worker was
+ * expected. A front end that cannot tell those apart renders an empty dashboard
+ * instead of noticing.
+ */
+export interface CurrentAccount {
+    account_type: string
+    account: {
+        id: number
+        name: string
+        email: string
+        status: string
+    }
+    /**
+     * The token's own claim list, echoed. Read it to decide what to offer before
+     * calling anything — but the back end re-checks it on every call, so hiding a
+     * button is a convenience and not the protection.
+     */
+    abilities: string[]
+}
+
+/**
+ * One administrator, as the account-management surface describes it.
+ *
+ * The same four fields as {@link CurrentAccount.account}, deliberately, but a
+ * separate type: this one is what a super administrator sees when looking at
+ * *someone else*, and each account type is meant to see a different
+ * representation of the same person. Sharing one type would make that a matter of
+ * who remembered to unset a field.
+ */
+export interface AdminAccount {
+    id: number
+    name: string
+    email: string
+    status: string
 }
 
 const signInRequest: Schema<SignInInput> = object({
@@ -194,6 +243,38 @@ const acknowledgementResponse: Schema<{ data: AcknowledgementResult }> = object(
     }),
 })
 
+/**
+ * `who am I`, as the back end declares it.
+ *
+ * Declared once and shared by all four doors even though there are four
+ * operations, because the four responses really are one response. Four copies
+ * would be four places for the shape to drift, and a drift here is invisible: the
+ * field the application reads is simply `undefined` at runtime, and a dashboard
+ * that renders an empty name looks like an empty account rather than a broken
+ * contract.
+ */
+const currentAccountResponse: Schema<{ data: CurrentAccount }> = object({
+    data: object({
+        account_type: string(),
+        account: object({
+            id: number(),
+            name: string(),
+            email: string(),
+            status: string(),
+        }),
+        abilities: array(string()),
+    }),
+})
+
+const adminAccountResponse: Schema<{ data: AdminAccount }> = object({
+    data: object({
+        id: number(),
+        name: string(),
+        email: string(),
+        status: string(),
+    }),
+})
+
 const definitions = {
     signInUser: {
         // Calling the generated function yields its URL and verb. The URL is
@@ -256,6 +337,36 @@ const definitions = {
         route: resetPasswordSuperAdmin() satisfies Route,
         request: resetPasswordRequest,
         response: acknowledgementResponse,
+    },
+
+    // The authenticated operations, and the first in this file with no `request`.
+    // A GET that takes nothing sends no body, so declaring a request shape for it
+    // would be a fiction that a later editor could "fix" by adding a field to.
+    currentUser: {
+        route: meUser() satisfies Route,
+        response: currentAccountResponse,
+    },
+    currentWorker: {
+        route: meWorker() satisfies Route,
+        response: currentAccountResponse,
+    },
+    currentAdmin: {
+        route: meAdmin() satisfies Route,
+        response: currentAccountResponse,
+    },
+    currentSuperAdmin: {
+        route: meSuperAdmin() satisfies Route,
+        response: currentAccountResponse,
+    },
+    showAdmin: {
+        // A route with a parameter in it cannot be resolved once when this object
+        // is built, so the function is what is stored and it is called per
+        // request. The alternative — resolving it here with a placeholder
+        // identifier — would put a URL with a made-up id in the contract, and a
+        // placeholder that was ever sent would read somebody else's record or
+        // 404 depending on the day.
+        route: (admin: number) => showAdmin({ admin }) satisfies Route,
+        response: adminAccountResponse,
     },
 } as const
 
@@ -341,6 +452,48 @@ export interface Operations {
 
     /** Redeem a super administrator reset link. */
     resetPasswordSuperAdmin(input: ResetPasswordInput): Promise<AcknowledgementResult>
+
+    /**
+     * Ask who the customer application's token belongs to.
+     *
+     * The four `current*` operations exist as four rather than one so that each
+     * application calls its own door, which is what makes "a worker token does
+     * not open the customer application" a fact the client can rely on instead of
+     * a convention it should not have to check.
+     *
+     * Rejects with a `forbidden` ApiError when the token belongs to another
+     * account type, and the message names both — a person who signed in at the
+     * wrong door is told which door, not that their password was wrong. Rejects
+     * with `unauthenticated` when there is no valid token at all, and with
+     * `forbidden` when the account has been suspended since the token was issued,
+     * which is why this is worth calling at start-up rather than trusting a token
+     * handed over from storage.
+     */
+    currentUser(): Promise<CurrentAccount>
+
+    /** Ask who the worker application's token belongs to. */
+    currentWorker(): Promise<CurrentAccount>
+
+    /** Ask who the administrator application's token belongs to. */
+    currentAdmin(): Promise<CurrentAccount>
+
+    /** Ask who the super administrator application's token belongs to. */
+    currentSuperAdmin(): Promise<CurrentAccount>
+
+    /**
+     * Read one administrator's record.
+     *
+     * A super administrator operation: the token must carry `accounts:read`, and
+     * an administrator is refused here with a `forbidden` ApiError whether or not
+     * the identifier exists. That last part is the back end's doing and not
+     * something to be defensive about — a 404 for a record you may not see would
+     * make this endpoint a way of discovering which administrator accounts exist,
+     * so a caller that gets a `notFound` can be sure it is allowed to ask.
+     *
+     * Rejects with `notFound` only for a permitted caller naming an identifier
+     * that does not exist.
+     */
+    showAdmin(admin: number): Promise<AdminAccount>
 }
 
 /**
@@ -444,7 +597,50 @@ export function createOperations(client: ApiClient): Operations {
 
             return data
         },
+        async currentUser() {
+            const { data } = await client.request(definitions.currentUser.route, {
+                response: definitions.currentUser.response,
+            })
+
+            return data
+        },
+        async currentWorker() {
+            const { data } = await client.request(definitions.currentWorker.route, {
+                response: definitions.currentWorker.response,
+            })
+
+            return data
+        },
+        async currentAdmin() {
+            const { data } = await client.request(definitions.currentAdmin.route, {
+                response: definitions.currentAdmin.response,
+            })
+
+            return data
+        },
+        async currentSuperAdmin() {
+            const { data } = await client.request(definitions.currentSuperAdmin.route, {
+                response: definitions.currentSuperAdmin.response,
+            })
+
+            return data
+        },
+        async showAdmin(admin) {
+            const { data } = await client.request(definitions.showAdmin.route(admin), {
+                response: definitions.showAdmin.response,
+            })
+
+            return data
+        },
     }
 }
 
-export { signInRequest, signInResponse, workerSignInResponse, forgotPasswordRequest, resetPasswordRequest }
+export {
+    signInRequest,
+    signInResponse,
+    workerSignInResponse,
+    forgotPasswordRequest,
+    resetPasswordRequest,
+    currentAccountResponse,
+    adminAccountResponse,
+}

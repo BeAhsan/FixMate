@@ -57,6 +57,26 @@ enum AccountType: string
     }
 
     /**
+     * What this account type is called to a person.
+     *
+     * The enum's value is a broker name — `users`, `super_admins` — which is
+     * right for configuration and wrong for a sentence. A refusal that says
+     * "this token is for a users account" is technically accurate and useless,
+     * and the four front ends will need the same word for the same account type
+     * when they label the signed-in identity in their shells, so it is decided
+     * here rather than spelled out at each of those call sites.
+     */
+    public function label(): string
+    {
+        return match ($this) {
+            self::User => 'end user',
+            self::Worker => 'worker',
+            self::Admin => 'administrator',
+            self::SuperAdmin => 'super administrator',
+        };
+    }
+
+    /**
      * The abilities a token issued for this account type carries.
      *
      * The one place abilities are decided. Previously each of the four sign-in

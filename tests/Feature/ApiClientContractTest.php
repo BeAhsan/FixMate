@@ -131,6 +131,110 @@ class ApiClientContractTest extends TestCase
         $this->artisan('api-client:check')->assertSuccessful();
     }
 
+    public function test_the_verb_is_read_from_the_routes_own_generated_block(): void
+    {
+        // The regression this exists for, and it is worth being precise about
+        // which way it fails.
+        //
+        // Wayfinder writes every route in a named group into one module, so
+        // `users/index.ts` now holds four routes: three POSTs and one GET. A check
+        // that reads the first `methods:` in the file answers for the sign-in, and
+        // for as long as every operation in every group was a POST the wrong answer
+        // agreed with the right one — so the check passed for the wrong reason and
+        // nobody could tell.
+        //
+        // The contract below therefore records the verb the *first* block really
+        // has: post. A check reading the first block finds post, agrees with this
+        // contract, and reports nothing. Only a check reading this route's own
+        // block sees get and reports the disagreement. So a green result here would
+        // mean the bug is back, not that the check is lenient.
+        $operations = array_map(
+            fn (array $operation): array => $operation['name'] === 'currentUser'
+                ? ['name' => 'currentUser', 'route' => 'users.me', 'method' => 'post', 'path' => '/api/v1/identity/users/me']
+                : $operation,
+            ApiClientContract::load(base_path())->operations(),
+        );
+
+        $problems = (new ApiClientContract($operations))->violations($this->generated, $this->apiRoutes());
+
+        $this->assertNotSame([], $problems);
+        // Both halves report it independently: the live route answers GET/HEAD,
+        // and the generated block for `users.me` answers get/head. The second is
+        // the one this test is about — the first would be caught by any verb check.
+        $this->assertStringContainsString(
+            'the route "/api/v1/identity/users/me" now answers GET/HEAD, the contract says POST',
+            $this->describe($problems),
+        );
+        $this->assertStringContainsString(
+            'the generated function answers get/head, the contract says post',
+            $this->describe($problems),
+        );
+    }
+
+    public function test_a_moved_parameterised_route_is_detected(): void
+    {
+        // A parameterised URL is the case that needs saying out loud: the
+        // generated URL is `/api/v1/identity/admins/{admin}`, so a comparison that
+        // walks braces naively stops inside `{admin}` and is left holding a URL
+        // that was never there.
+        //
+        // The real contract passing already covers the truncation, because a
+        // truncated block never contains the full path and would report a
+        // violation against the true one. This test is the other direction — a
+        // deliberately wrong placeholder — and it is here so the reason the
+        // matching test is meaningful is written down where it will be read.
+        $contract = new ApiClientContract([
+            ['name' => 'showAdmin', 'route' => 'admins.show', 'method' => 'get', 'path' => '/api/v1/identity/admins/{id}'],
+        ]);
+
+        $problems = $contract->violations($this->generated, $this->apiRoutes());
+
+        $this->assertStringContainsString('does not carry the URL', $this->describe($problems));
+        $this->assertStringContainsString('/api/v1/identity/admins/{id}', $this->describe($problems));
+    }
+
+    public function test_a_hyphenated_route_name_is_matched_to_its_camel_case_export(): void
+    {
+        // The route is `admins.forgot-password` and the generated export is
+        // `forgotPassword`, so finding the block means reproducing a transform the
+        // generator owns.
+        //
+        // Asserted with a deliberately wrong path rather than a correct one,
+        // because the two failure modes have different messages: a check that
+        // failed to find the block at all would report "generation produced no
+        // definition", and this asserts it got as far as comparing URLs. That
+        // distinction is the whole point — finding the wrong block and finding no
+        // block are different bugs and need different fixes.
+        $contract = new ApiClientContract([
+            [
+                'name' => 'forgotPasswordAdmin',
+                'route' => 'admins.forgot-password',
+                'method' => 'post',
+                'path' => '/api/v1/identity/admins/forgot-password-v2',
+            ],
+        ]);
+
+        $problems = $contract->violations($this->generated, $this->apiRoutes());
+
+        $this->assertStringContainsString('does not carry the URL', $this->describe($problems));
+        $this->assertStringNotContainsString('produced no definition', $this->describe($problems));
+    }
+
+    public function test_an_export_name_that_is_a_suffix_of_another_does_not_match_it(): void
+    {
+        // Anchoring the lookup. `me` must not match a hypothetical `time.definition`
+        // in the same module, and the cheapest way to keep that true as routes are
+        // added is to assert the anchor is doing something — so this asks for an
+        // export that is a suffix of a real one and requires that it is *not* found.
+        $contract = new ApiClientContract([
+            ['name' => 'ime', 'route' => 'users.ime', 'method' => 'get', 'path' => '/api/v1/identity/users/me'],
+        ]);
+
+        $problems = $contract->violations($this->generated, $this->apiRoutes());
+
+        $this->assertStringContainsString('produced no definition', $this->describe($problems));
+    }
+
     /**
      * Run the contract's comparison against an alternative view of the back end.
      *
