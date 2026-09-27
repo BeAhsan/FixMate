@@ -59,6 +59,11 @@ pipeline {
             defaultValue: '',
             description: 'Optional public URL to smoke test from outside the VPS, e.g. https://example.com/up'
         )
+        string(
+            name: 'API_URL',
+            defaultValue: '',
+            description: 'Public address of the back end, baked into the four front-end exports at build time, e.g. https://api.example.com. Required unless TARGET is "none". Its origin must be one of the four in config/applications.php, or the browser refuses every request before the API is asked.'
+        )
     }
 
     // Literals only. A Declarative environment block cannot reference variables
@@ -117,6 +122,24 @@ pipeline {
                     set -eu
                     docker build --target test -t "${CI_TEST_IMAGE}" .
                     docker run --rm "${CI_TEST_IMAGE}" vendor/bin/pint --test
+
+                    # The deploy script's own tests, in a bash 5 container.
+                    #
+                    # NOT the test image: it is php-fpm-alpine and has no bash at
+                    # all, and `deploy/deploy.sh` is a bash script. And not the
+                    # controller's shell either - it is socket-only, which is why
+                    # every other step here is a `docker run`.
+                    #
+                    # bash:5 rather than the host's shell is the load-bearing
+                    # part, not tidiness. macOS ships bash 3.2, where arithmetic on
+                    # an unset variable under `set -u` quietly yields 0; bash 4.4+
+                    # makes it a fatal "unbound variable". A `set -u` bug in the
+                    # deploy path is therefore invisible on a developer machine and
+                    # fatal on the VPS, and this is the only step that would catch
+                    # it before a deploy does. Mirrored by the deploy-script step
+                    # in .github/workflows/laravel.yml, which runs on ubuntu and
+                    # so already has bash 5.
+                    docker run --rm -v "$PWD":/w -w /w bash:5 bash deploy/test-deploy.sh
                 '''
             }
         }
@@ -233,21 +256,118 @@ pipeline {
 
                         # The moving :latest tag only ever points at what is
                         # actually live, so only production gets it.
-                        if [ "$TARGET" = "production" ]; then
-                            LATEST_TAG="--tag $IMAGE_NAME:latest"
-                        else
-                            LATEST_TAG=""
-                        fi
+                        #
+                        # Computed per image, from the image's own name, and NOT
+                        # stored in one variable reused across five builds. A single
+                        # variable holds the app's whole reference including
+                        # ":latest", so reusing it for a front end pushes all four
+                        # of them to the *app's* latest tag - four images contending
+                        # for one name, and the app's own :latest left holding
+                        # whichever front end happened to build last. It is a
+                        # one-line slip with a five-image consequence, so the tag is
+                        # derived where it is used.
+                        latest_tag_for() {
+                            if [ "$TARGET" = "production" ]; then
+                                printf -- '--tag %s:latest' "$1"
+                            fi
+                        }
 
+                        # FIVE IMAGES, ONE COMMIT, ONE TAG.
+                        #
+                        # The four front-end names are derived from IMAGE_NAME with
+                        # the same rule deploy.sh uses to derive them from the app
+                        # reference, and the two have to agree exactly. Change one
+                        # and the other has to change too; if they disagree the
+                        # deploy fails loudly on a pull rather than quietly serving
+                        # a back end beside front ends built against a contract it
+                        # no longer has.
+                        REPO="${IMAGE_NAME%/*}"
+
+                        # The back end first, from the repository root Dockerfile.
                         # buildx (docker-container driver) is required to emit a
                         # platform other than this host's own.
+                        echo "==> Building $IMAGE"
                         docker buildx build \
                             --platform "$PLATFORM" \
                             --build-arg "APP_NAME=fixmate" \
                             --tag "$IMAGE" \
-                            $LATEST_TAG \
+                            $(latest_tag_for "$IMAGE_NAME") \
                             --push \
                             .
+
+                        # Then the four front ends.
+                        #
+                        # The build context is the REPOSITORY ROOT, not apps/<name>:
+                        # the workspace hoists node_modules to the root and `npm ci`
+                        # needs the lockfile naming every member, neither of which
+                        # exists inside the application directory. So -f names the
+                        # Dockerfile and the context stays '.'.
+                        # Directory and image name, paired explicitly.
+                        #
+                        # The image is `user-app` and the directory is `apps/user`;
+                        # the image is `super-admin-app` and the directory is
+                        # `apps/super-admin`. The two differ only by an `-app`
+                        # suffix, which is the same thing as saying they are easy
+                        # to confuse - the first version of this loop derived the
+                        # directory from the image name and failed with
+                        # "lstat apps/user-app: no such file or directory" on the
+                        # very first front end. Written out, the mismatch is
+                        # visible instead of inferred, and adding a fifth
+                        # application is one more pair rather than a new rule.
+                        for pair in user:user-app \
+                                    worker:worker-app \
+                                    admin:admin-app \
+                                    super-admin:super-admin-app; do
+                            dir="${pair%%:*}"
+                            name="${pair#*:}"
+
+                            # Fail before the first build rather than on the
+                            # second image, when the back end has already been
+                            # pushed under a tag that is now half a release.
+                            if [ ! -f "apps/$dir/Dockerfile" ]; then
+                                echo "apps/$dir/Dockerfile is missing. Cannot build $name." >&2
+                                exit 1
+                            fi
+
+                            echo "==> Building $REPO/$name:$GIT_SHA from apps/$dir/Dockerfile"
+
+                            # NEXT_PUBLIC_API_URL is inlined into the export at
+                            # build time - there is no runtime configuration, which
+                            # is why a front-end service in docker-compose.prod.yml
+                            # has no env_file. Unset falls back to a localhost
+                            # address and a *blank* value throws, so a blank
+                            # parameter here has to fail the build rather than be
+                            # passed through.
+                            if [ -z "$API_URL" ]; then
+                                echo "API_URL is not set. It is baked into the four front-end" >&2
+                                echo "exports, so it cannot be supplied at run time." >&2
+                                echo "Set it on the job, or run with TARGET=none to build nothing." >&2
+                                exit 1
+                            fi
+
+                            docker buildx build \
+                                --platform "$PLATFORM" \
+                                --build-arg "NEXT_PUBLIC_API_URL=$API_URL" \
+                                --file "apps/$dir/Dockerfile" \
+                                --tag "$REPO/$name:$GIT_SHA" \
+                                $(latest_tag_for "$REPO/$name") \
+                                --push \
+                                .
+                        done
+
+                        # Report what was actually pushed, all five, read back from
+                        # the registry rather than from the list of intentions
+                        # above. A build that pushed four and said five is the
+                        # failure this catches, and it is only visible if the
+                        # answer comes from the registry.
+                        echo "==> Pushed:"
+                        for ref in "$IMAGE" \
+                                  "$REPO/user-app:$GIT_SHA" \
+                                  "$REPO/worker-app:$GIT_SHA" \
+                                  "$REPO/admin-app:$GIT_SHA" \
+                                  "$REPO/super-admin-app:$GIT_SHA"; do
+                            echo "    $ref"
+                        done
 
                         docker logout "$REGISTRY"
                     '''

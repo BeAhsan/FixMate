@@ -56,6 +56,19 @@ jobs:
       # true. The one above cannot tell — the contract has no field for a
       # security requirement. Mirrored in the Jenkins Test stage.
       run: php artisan api-docs:check
+    - name: Test the deploy script
+      # The deploy script's own tests. No PHP, no Node, and no services - it is a
+      # bash script, so this needs nothing the job has not already set up.
+      #
+      # This step is here rather than in the `front-end` job because the deploy
+      # path is not front-end work, and putting it in the front-end job would
+      # report a broken deploy script as a front-end failure. ubuntu-latest ships
+      # bash 5, which is the point: bash 3.2 on a macOS host treats arithmetic on
+      # an unset variable as zero under `set -u`, and bash 4.4+ treats it as
+      # fatal, so the version of bash this runs under is the difference between
+      # catching a deploy-path bug here and hitting it on the VPS.
+      run: bash deploy/test-deploy.sh
+
     - name: Execute tests (Unit and Feature tests) via PHPUnit/Pest
       run: php artisan test
 
