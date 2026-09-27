@@ -269,6 +269,14 @@ is limited, and one address from many connections is limited too. The attempt
 ceiling is configuration rather than a constant, because a private network and
 the public internet do not want the same threshold.
 
+**Password reset is limited separately, and per account type.** It earns its own
+counters because it is limited for a different reason: a reset request causes mail
+to be sent, so an unlimited endpoint is a flooding vector that the sign-in limit
+does not bound. It is counted per address rather than per address and IP, so that
+one attacker cannot exhaust the allowance of everyone behind a shared address.
+The two sets of limiters never share a counter, or letting one out would let the
+other out.
+
 **Nothing else is a credential store.** The four credential stores are separated
 by four guards, each with its own provider and model. Sanctum's polymorphic token
 owner column supports all four, so they share one token table and one revocation
@@ -607,10 +615,11 @@ must pass locally before it is pushed.
   currently fixed to UTC in configuration rather than read from the
   environment; changing that is a small, separate piece of work.
 - **Email or push notifications.**
-- **Rate limiting anywhere other than the four sign-in endpoints.** Login
-  throttling is in scope, and is a per-account-type `RateLimiter` plus route
-  middleware. Throttling the dashboards, the password reset endpoints, or the API
-  generally is not, and is worth doing before any public exposure.
+- **Rate limiting anywhere other than the sign-in and password reset
+  endpoints.** Those two are in scope, each as a per-account-type `RateLimiter`
+  plus route middleware, counted separately because the reasons for limiting
+  them are different. Throttling the dashboards, or the API generally, is not,
+  and is worth doing before any public exposure.
 - **File uploads, media handling, and the public storage disk.**
 - **Performance work, caching strategy, and query optimisation.** The dashboards
   have no data to be slow about yet.
