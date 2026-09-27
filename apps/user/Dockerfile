@@ -72,6 +72,7 @@ COPY package.json package-lock.json ./
 COPY apps/user/package.json ./apps/user/
 COPY packages/api-client/package.json ./packages/api-client/
 COPY packages/session/package.json ./packages/session/
+COPY packages/ui/package.json ./packages/ui/
 
 RUN npm ci
 
@@ -93,6 +94,7 @@ COPY apps/user ./apps/user
 # fails `npm ci`, because the lockfile names a member whose manifest is absent.
 COPY packages/api-client/src ./packages/api-client/src
 COPY packages/session/src ./packages/session/src
+COPY packages/ui/src ./packages/ui/src
 
 # This application's own build, not the root `npm run build`. The root script
 # begins with `php artisan api-client:generate`, and there is deliberately no
@@ -101,6 +103,20 @@ COPY packages/session/src ./packages/session/src
 RUN npm run build --workspace=@fixmate/user-app \
     && test -f apps/user/out/index.html \
     || (echo "the build produced no out/index.html" >&2; exit 1)
+
+# Assert the shared package's classes reached the compiled CSS.
+#
+# Tailwind finds the classes it generates by scanning source, and it reaches
+# `@fixmate/ui` only through the `@source` line in globals.css — a relative path
+# resolved against that file. A path one level short resolves to a directory that
+# does not exist, and Tailwind ignores a missing source **in silence**: the build
+# succeeds, the shell renders, and every class in it is missing. That is not a
+# failed build, it is an unstyled application that looks deployed.
+#
+# So the build checks. `max-w-5xl` is used only in packages/ui, which makes it a
+# fair witness: if the shell's classes are being generated, it is in the output.
+RUN grep -rq 'max-w-5xl' apps/user/out/_next/static/ \
+    || (echo "the shared package's Tailwind classes are missing from the build; check the @source path in apps/user/app/globals.css" >&2; exit 1)
 
 # ---------------------------------------------------------------------------
 # Stage 2 - Serve it

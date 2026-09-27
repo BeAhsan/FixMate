@@ -1,12 +1,27 @@
 @import 'tailwindcss';
 
 /*
+ * Tailwind only generates the classes it can find, and it finds them by
+ * scanning source files. It does not follow the workspace: `@fixmate/ui` is
+ * reached through a symlink in `node_modules`, and Tailwind's scanner does not
+ * follow it. Without this line the shell renders with no styling at all — no
+ * error, no warning, just unstyled markup.
+ *
+ * The path is relative to THIS FILE, not to the workspace root, and it is three
+ * levels up: `apps/user/app/` → `apps/user` → `apps` → the repository root.
+ * Two levels resolves to `apps/packages/ui`, which does not exist — and a
+ * `@source` pointing at nothing is ignored in silence, so the symptom is an
+ * unstyled shell rather than a failed build. That is why the image build
+ * asserts a shell class is present in the compiled CSS; see the Dockerfile.
+ */
+@source '../../../packages/ui/src';
+
+/*
  * The base layer, declared rather than inherited.
  *
- * Next.js injects a preflight reset by importing `next/dist/...` styles, but
- * the reset is only applied to the routes it is linked into. Stating the
- * handful of properties the shell depends on here means the export looks the
- * same whether or not a future Tailwind version changes what preflight covers.
+ * Stating the handful of properties the shell depends on means the export looks
+ * the same regardless of what a future Tailwind version decides preflight
+ * covers.
  */
 @layer base {
     :root {
@@ -21,5 +36,16 @@
         body {
             @apply bg-slate-950 text-slate-100;
         }
+    }
+
+    /*
+     * Never remove a focus ring. A design system is exactly where this is lost:
+     * the outline is the only thing telling a keyboard user where they are, and
+     * removing it makes the interface unusable rather than merely less pretty.
+     * Kept here as well as on the components, because a component added later
+     * inherits it without having to remember.
+     */
+    :focus-visible {
+        @apply outline-2 outline-offset-2 outline-sky-700 dark:outline-sky-400;
     }
 }

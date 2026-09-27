@@ -50,3 +50,16 @@ export const session = createSession({
 export { ApiError } from '@fixmate/api-client'
 export type { ApiErrorKind } from '@fixmate/api-client'
 export type { SessionEndReason, SessionState } from '@fixmate/session'
+
+/**
+ * Who the live token belongs to, and what it may do.
+ *
+ * Read from the back end rather than kept locally, and that is the point of the
+ * call: the abilities are the back end's to decide, and a token restored from
+ * storage may belong to a suspended account or to another account type. The
+ * navigation is filtered by this answer, and the header names the account type
+ * it returns — neither of which a front end should be inventing.
+ */
+export async function whoAmI() {
+    return api.currentUser()
+}
