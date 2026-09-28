@@ -24,6 +24,26 @@ use Illuminate\Http\Request;
  * no abilities of its own, so there is nothing there to copy — and if the
  * abilities were ever taken from the token instead, a renewal token's ability
  * list would become a way to choose what the next access token can do.
+ *
+ * ## Why this route is exempt from `EnsurePasswordChanged`
+ *
+ * It used not to be, and the reason it changed is the reason the response
+ * carries `must_change_password`.
+ *
+ * Renewal is the only way a session survives a page reload, because the access
+ * token is held in memory. So refusing it meant that a person who signed in,
+ * was routed to the change-password screen, and then refreshed — or whose
+ * connection dropped — was signed out mid-form and told their account could not
+ * be used. That is false, and it is the worst possible answer: the account is
+ * fine, and the thing it needs is the form they were already looking at.
+ *
+ * The security argument for refusing does not survive contact with the rest of
+ * the arrangement. A renewal mints an access token, and that token is refused
+ * by `EnsurePasswordChanged` on every route except the change and sign-out, so
+ * it can reach nothing. The rule is enforced on the token's use, not on its
+ * existence, and a token nobody can use with is not a way around anything.
+ *
+ * `routes/api.php` carries the long version next to the exemption itself.
  */
 class RenewSessionController extends Controller
 {
@@ -44,6 +64,24 @@ class RenewSessionController extends Controller
             AccountTypeRegistry::for($account)->abilities(),
         );
 
-        return response()->json(['data' => $issued->toArray()]);
+        return response()->json([
+            'data' => [
+                ...$issued->toArray(),
+                // The same field the sign-in response reports, and for the same
+                // reason: a client that has just restored a session from a
+                // renewal token has no other way of learning that the account
+                // must still choose a password. Without it the only signal would
+                // be the 403 every other route returns, and acting on that means
+                // matching on the back end's wording - which is a second place
+                // where the meaning of that sentence is decided, and it changes
+                // silently when somebody improves the phrasing.
+                //
+                // Advisory in exactly the way the sign-in copy of it is: the
+                // refusal lives in `EnsurePasswordChanged`, and a client that
+                // ignores this field still cannot reach anything. Read it to route
+                // somebody to the screen that helps; do not treat it as the control.
+                'must_change_password' => (bool) $account->must_change_password,
+            ],
+        ]);
     }
 }

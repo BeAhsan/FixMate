@@ -450,9 +450,69 @@ never enter an image layer.
   reference to another account type's operations.
 - **The application key, not the account type, is what an application declares.**
   `OPERATIONS_BY_APPLICATION` in `@fixmate/session` turns `application: 'user'`
-  into four operations bound to the `users` store. An application has no way to
+  into five operations bound to the `users` store. An application has no way to
   name another application's door, so the only thing that could stop it is the
   back end's `account.can` — and that is a control, not a convention.
+
+- **`EnsurePasswordChanged` exempts three routes, and renewal is the one that
+  looks wrong.** The change itself and sign-out obviously have to be, or the
+  account is locked out of the only things that would help. Renewal is exempt
+  too, and the obvious objection — a renewal token in browser storage that keeps
+  buying access tokens undoes the rule by standing still — does not survive the
+  rest of the arrangement: **the access token a renewal mints is refused by that
+  same guard on every route except the change and sign-out.** The rule is
+  enforced on the token's *use*, not on its existence, so a renewal produces a
+  token that can reach nothing.
+  - **What refusing it actually bought was a false message.** Renewal is the only
+    way a session survives a reload, because the access token is in memory. So
+    the sequence was: sign in, be routed to the change screen, refresh, renewal
+    refused with a 403, session dropped, and the sign-in screen says *"your
+    account cannot be used at the moment, please contact an administrator"* — for
+    an account that is completely fine, needing the form it was already on.
+  - **The renewal response therefore reports `must_change_password`.** Without
+    it the only honest thing a front end could do with that 403 is match on the
+    back end's wording, which this repository forbids elsewhere for exactly the
+    reason it should be forbidden here. A field the back end sends beats a
+    sentence a client reverse-engineers.
+  - **The flag lives on the session, not on the account, and cannot live on the
+    account.** `whoAmI` is one of the routes a flagged account is refused, so the
+    one account this package cannot read is the one it most needs to know about.
+    Sign-in and renewal are the only two calls that succeed for it.
+  - **The test that pinned the old behaviour asserted the opposite now, in two
+    halves**: the renewal succeeds, *and* the token it mints is still refused
+    everywhere else. The second half is the part that was always the point, and
+    it is the half that would catch the exemption becoming a hole.
+- **A schema only fails on a field it *promises* and the back end omits — never
+  the reverse.** `must_change_password` was in the sign-in response for the whole
+  time the front end did not exist, the client's schema did not mention it, and
+  nothing failed: the extra field was accepted and thrown away. That is the shape
+  of the bug `operations.test.ts` now guards by putting the field in its fixture
+  and asserting it survives.
+- **Four `changePassword*` operations were declared, contracted, documented and
+  had no way to be called.** They were in `definitions`, in `contract.json` and in
+  `openapi.json`, absent from the `Operations` interface and from
+  `createOperations`, and their routes were written as `() => change()` when a
+  `Route` was wanted. Nothing caught it because the type of the object being built
+  and the type it claimed to be agreed with each other and were both wrong.
+  TypeScript could only have found it if the interface had listed what the
+  contract promised — which was the missing half. A declared operation is not a
+  callable one.
+- **A `?next=` pointing at the screen that ignores it is a redirect loop, and it
+  is reachable by typing the address.** `destinationFor` in
+  `packages/session/src/react/application.tsx` is one pure function because two
+  components had been making the same decision separately and had drifted: the
+  change screen bounced a signed-out person to sign-in carrying `next` pointing at
+  itself, so *every* sign-in took two navigations. It was extracted so the
+  decision can be tested at all — `renderToStaticMarkup` can check markup and
+  cannot check where a person ends up.
+- **`app/change-password/page.tsx` needs its `Suspense` boundary, and a comment
+  arguing it does not is not evidence.** The first version carried a reasoned
+  case for omitting it. `next build` refused with *"useSearchParams() should be
+  wrapped in a suspense boundary"*, which is Next declining the argument. The
+  static export ships the empty fallback for this route exactly as it does for
+  sign-in, so **grepping `out/change-password/index.html` for a heading proves
+  nothing** — the screen renders in the browser and is verified by its component
+  test.
 - **Two Next.js constraints shape the file layout, and both fail confusingly.**
   `createApplication()` is called at module scope in a `'use client'` module, and
   Next refuses to *call* a client function during a server render ("Attempted to

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\NewAccessToken;
+use Laravel\Sanctum\PersonalAccessToken;
 use Tests\TestCase;
 
 /**
@@ -27,6 +28,26 @@ use Tests\TestCase;
  *
  * Every assertion is made over HTTP with a real token, because the failure this
  * guards against is a client that never went through the user interface.
+ *
+ * ## Three routes are exempt, and the third one surprises people
+ *
+ * The change itself and sign-out have to be, or the account is locked out of the
+ * only things that would help. Renewal is exempt too, which is the one that looks
+ * wrong at a glance: a renewal token in browser storage that keeps buying access
+ * tokens appears to let the rule be defeated by standing still.
+ *
+ * It does not, and the reason is that the access token a renewal mints is refused
+ * by this same guard on every route except the change and sign-out. The rule is
+ * enforced on the token's use, not on its existence. What refusing renewal bought
+ * was a person who refreshed the change-password screen being signed out and told
+ * their account could not be used — which is false, and is the worst answer
+ * available, because the account is fine and the fix is the form they were
+ * already on. The renewal response therefore reports the flag, so a front end can
+ * route them back instead of matching on a 403's wording.
+ *
+ * {@see test_renewal_succeeds_because_the_token_it_mints_can_reach_nothing}
+ * asserts both halves, because the exemption is only safe while the second one
+ * holds.
  */
 class MustChangePasswordTest extends TestCase
 {
@@ -119,20 +140,67 @@ class MustChangePasswordTest extends TestCase
         $this->assertStringContainsString('new password', (string) $message);
     }
 
-    public function test_renewal_is_refused_too_which_is_the_whole_point(): void
+    public function test_renewal_succeeds_because_the_token_it_mints_can_reach_nothing(): void
     {
         $account = $this->flagged(User::factory()->create());
         $renewal = $account->createToken('api', [Ability::SESSION_RENEW]);
 
-        $this->actingAsToken($renewal)
+        // Renewal used to be refused here, on the argument that a renewal token in
+        // browser storage that keeps buying access tokens undoes the rule by standing
+        // still. That argument does not survive the rest of the arrangement: the
+        // access token a renewal mints is refused by `EnsurePasswordChanged` on every
+        // route except the change and sign-out, so it can reach nothing. What
+        // refusing renewal actually bought was a signed-out person in the middle of
+        // choosing a password, told their account could not be used - which is false.
+        //
+        // The flag is reported so the front end can route them back rather than
+        // reverse-engineer the 403's wording. See the assertion below: the exemption
+        // is safe *because* the new token is still useless, and this is the half of
+        // that a reader should not have to take on trust.
+        $response = $this->actingAsToken($renewal)
             ->postJson('/api/v1/identity/users/session/renew')
+            ->assertOk()
+            ->assertJsonPath('data.must_change_password', true);
+
+        $minted = $response->json('data.access_token');
+
+        $this->assertIsString($minted);
+
+        // The point, stated as an assertion rather than as a comment. A renewal that
+        // worked AND the access token it produced could reach something would be the
+        // failure the original refusal was guarding against, and the exemption is
+        // only safe while this holds.
+        $this->actingAsToken($this->tokenFrom($minted))
+            ->getJson('/api/v1/identity/users/me')
             ->assertForbidden();
 
-        // A renewal token that kept buying access tokens would let the whole rule be
-        // defeated by standing still, so this is the assertion that makes the guard
-        // mean something. It is in `auth:sanctum`'s group, which is where renewal
-        // lives, and the guard is on the group.
-        $this->assertDatabaseCount('personal_access_tokens', 1);
+        // Rotation still happened, so the renewal token is still worth exactly one
+        // use. The exemption did not weaken that: two tokens exist (the access token
+        // just minted and the replacement renewal token), and the one presented is
+        // gone.
+        $this->assertDatabaseCount('personal_access_tokens', 2);
+    }
+
+    public function test_renewal_reports_the_flag_so_a_reload_can_be_routed(): void
+    {
+        // The reason renewal is exempt at all. A front end that has just restored a
+        // session from browser storage has no other way of learning that the account
+        // must still choose a password, and the alternative was matching on the 403's
+        // message - a second place where that sentence's meaning is decided.
+        $flagged = $this->flagged(User::factory()->create());
+        $this->actingAsToken($flagged->createToken('api', [Ability::SESSION_RENEW]))
+            ->postJson('/api/v1/identity/users/session/renew')
+            ->assertOk()
+            ->assertJsonPath('data.must_change_password', true);
+
+        $unflagged = $this->unflagged(User::factory()->create());
+        $this->actingAsToken($unflagged->createToken('api', [Ability::SESSION_RENEW]))
+            ->postJson('/api/v1/identity/users/session/renew')
+            ->assertOk()
+            // And `false`, not absent. A field that appears and disappears is a field
+            // four front ends each have to branch on, and one of them will branch on
+            // it wrongly.
+            ->assertJsonPath('data.must_change_password', false);
     }
 
     public function test_sign_out_is_still_allowed_because_refusing_it_would_be_a_trap(): void
@@ -491,5 +559,26 @@ class MustChangePasswordTest extends TestCase
         $this->app['auth']->forgetGuards();
 
         return $this->withToken($token->plainTextToken);
+    }
+
+    /**
+     * Present a token the back end minted, rather than one this test created.
+     *
+     * Needed because the renewal test has to use the access token that came back
+     * over HTTP - creating an equivalent one instead would not prove anything
+     * about the token the exemption actually issues.
+     *
+     * A Sanctum plain-text token is `{id}|{secret}`, so the row is found by its
+     * id. Resolving it through the model's own token relation rather than through
+     * a global query means the lookup cannot succeed for a token belonging to
+     * some other account type.
+     */
+    private function tokenFrom(string $plainTextToken): NewAccessToken
+    {
+        [$id] = explode('|', $plainTextToken, 2);
+
+        $token = PersonalAccessToken::findOrFail((int) $id);
+
+        return new NewAccessToken($token, $plainTextToken);
     }
 }

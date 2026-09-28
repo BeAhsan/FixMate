@@ -16,7 +16,7 @@ import { createApplication } from '@fixmate/session'
  *
  * The account type is not named here at all. It is implied by
  * `application: 'worker'`, and `OPERATIONS_BY_APPLICATION` in
- * `@fixmate/session` turns that into the four operations this door may call. An
+ * `@fixmate/session` turns that into the five operations this door may call. An
  * application cannot reach a customer's door because it has no way to say so;
  * the only thing that could stop it is the back end's `account.can`.
  *
@@ -38,7 +38,13 @@ const sections = [
     { href: '/account/', label: 'Account' },
 ]
 
-export const { session, SessionProvider, ApplicationShell, SignInScreen } = createApplication({
+export const {
+    session,
+    SessionProvider,
+    ApplicationShell,
+    SignInScreen,
+    ChangePasswordScreen,
+} = createApplication({
     application: 'worker',
     applicationLabel: 'FixMate',
     // Inlined into the bundle at build time, because a static export has nothing

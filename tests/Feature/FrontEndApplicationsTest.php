@@ -39,13 +39,14 @@ class FrontEndApplicationsTest extends TestCase
      *   will say so precisely.
      * - `.env.example` is a template for the build argument, and there is one
      *   value in it.
-     * - `app/providers.tsx` and `app/sign-in/page.tsx` are **pure delegation**.
-     *   Each renders one component imported from `@fixmate/session` and contains
-     *   no logic, so there is nothing in them an application could legitimately
-     *   want to change: what differs between the four is which operations the
-     *   session binds, and that lives in `lib/application.ts`. They are identical
-     *   because they are not allowed to be anything else — the test above fails
-     *   if one of them grows a `<form>` or a `fetch`.
+     * - `app/providers.tsx`, `app/sign-in/page.tsx` and
+     *   `app/change-password/page.tsx` are **pure delegation**. Each renders one
+     *   component imported from `@fixmate/session` and contains no logic, so there
+     *   is nothing in them an application could legitimately want to change: what
+     *   differs between the four is which operations the session binds, and that
+     *   lives in `lib/application.ts`. They are identical because they are not
+     *   allowed to be anything else — the test above fails if one of them grows a
+     *   `<form>` or a `fetch`.
      */
     private const ALLOWED_IDENTICAL = [
         'test/static-export.test.ts',
@@ -56,6 +57,7 @@ class FrontEndApplicationsTest extends TestCase
         '.env.example',
         'app/providers.tsx',
         'app/sign-in/page.tsx',
+        'app/change-password/page.tsx',
     ];
 
     public function test_all_four_applications_exist(): void

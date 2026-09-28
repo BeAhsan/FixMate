@@ -22,6 +22,15 @@ const reply = (status: number, body: unknown) => () => new Response(JSON.stringi
  * schema rejected this fixture until they were added. A front end that treats a
  * session as one token would have been told here rather than discovering it as a
  * session that ends for no visible reason.
+ *
+ * `must_change_password` is here for the same reason, and its absence is worth
+ * naming because it is the shape of the bug this file exists to catch: the field
+ * was missing from the client's schema for the whole time story 21's front end
+ * did not exist, and nothing failed. The response carried it, the client declared
+ * nothing, and the extra field was accepted and thrown away — the schema only
+ * fails on a field the client *promises* and the back end omits, never the
+ * reverse. Making it required here is what turns that silence into a test
+ * failure.
  */
 const signInResponse = {
     data: {
@@ -31,6 +40,7 @@ const signInResponse = {
         renewal_token: 'plain-text-renewal-token',
         access_token_expires_at: '2026-01-01T00:15:00+00:00',
         renewal_token_expires_at: '2026-01-02T00:00:00+00:00',
+        must_change_password: false,
     },
 }
 
@@ -63,7 +73,50 @@ describe('signing in as an end user', () => {
             renewal_token: 'plain-text-renewal-token',
             access_token_expires_at: '2026-01-01T00:15:00+00:00',
             renewal_token_expires_at: '2026-01-02T00:00:00+00:00',
+            must_change_password: false,
         })
+    })
+
+    it('reports that a password must be changed rather than dropping the field', async () => {
+        // The same shape, one field different. This is the assertion that the field
+        // survives the client rather than being accepted-and-discarded, which is
+        // what happened for as long as the schema did not mention it.
+        const { fetch } = recordingFetch({
+            data: { ...signInResponse.data, must_change_password: true },
+        })
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.signInUser({
+            email: 'ahsan@example.test',
+            password: 'password123',
+        })
+
+        expect(result.must_change_password).toBe(true)
+    })
+
+    it('reports the flag on a renewal, which is the only call a reload makes', async () => {
+        // Renewal is exempt from the back end's `must_change_password` guard, and
+        // this is the client half of why that is safe to do: a session restored from
+        // browser storage runs a renewal and nothing else, so without this field the
+        // only evidence that the account is flagged would be the 403 every other
+        // route returns — and the front end would have to recognise it by wording.
+        const { fetch, calls } = recordingFetch({
+            data: {
+                access_token: 'plain-text-access-token',
+                renewal_token: 'plain-text-renewal-token',
+                access_token_expires_at: '2026-01-01T00:15:00+00:00',
+                renewal_token_expires_at: '2026-01-02T00:00:00+00:00',
+                must_change_password: true,
+            },
+        })
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.renewSessionUser()
+
+        expect(calls).toEqual([
+            'https://api.fixmate.test/api/v1/identity/users/session/renew',
+        ])
+        expect(result.must_change_password).toBe(true)
     })
 
     it('rejects refused credentials as a validation failure with a field error', async () => {

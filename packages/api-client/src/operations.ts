@@ -33,7 +33,7 @@ import { change as changePasswordUserRoute } from './generated/routes/users/pass
 import { change as changePasswordWorkerRoute } from './generated/routes/workers/password'
 import { change as changePasswordAdminRoute } from './generated/routes/admins/password'
 import { change as changePasswordSuperAdminRoute } from './generated/routes/super-admins/password'
-import { array, nullable, number, object, string, type Schema } from './schema'
+import { array, boolean, nullable, number, object, string, type Schema } from './schema'
 import type { ApiClient, Route } from './http'
 
 /**
@@ -66,6 +66,22 @@ export interface RenewedSession {
     renewal_token: string
     access_token_expires_at: string
     renewal_token_expires_at: string
+    /**
+     * Whether this account still has to replace its password.
+     *
+     * Reported by renewal as well as by sign-in, and the reason is that renewal is
+     * the only thing that happens on a page reload. A front end restoring a session
+     * from browser storage has run no sign-in, so without this field its only
+     * evidence that the account is flagged would be the 403 every other route
+     * returns — and acting on that means matching on the back end's wording, which
+     * is a second place where that sentence's meaning lives and changes silently
+     * when somebody improves the phrasing.
+     *
+     * Advisory, exactly as at sign-in: `EnsurePasswordChanged` is the control, and
+     * a client ignoring this field still cannot reach anything. It is here so the
+     * session can be put back on the screen that helps.
+     */
+    must_change_password: boolean
 }
 
 /** What signing out resolves with. A sentence, because a front end shows it. */
@@ -100,6 +116,21 @@ export interface SignInResult {
     renewal_token: string
     access_token_expires_at: string
     renewal_token_expires_at: string
+    /**
+     * Whether this account must replace its password before it can be used.
+     *
+     * A *courtesy*, not a control: it lets a front end route to the change screen
+     * instead of to a dashboard that will refuse every request. `EnsurePasswordChanged`
+     * is the control, and a client that ignores this field entirely still cannot
+     * reach a single other endpoint.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived. A
+     * sign-in that returned no way to learn this would put a person with a shared
+     * password on a dashboard that silently refuses everything, and the symptom —
+     * every request failing for no visible reason — is very hard to trace back to
+     * a missing field.
+     */
+    must_change_password: boolean
 }
 
 export interface WorkerSignInResult {
@@ -118,6 +149,21 @@ export interface WorkerSignInResult {
     renewal_token: string
     access_token_expires_at: string
     renewal_token_expires_at: string
+    /**
+     * Whether this account must replace its password before it can be used.
+     *
+     * A *courtesy*, not a control: it lets a front end route to the change screen
+     * instead of to a dashboard that will refuse every request. `EnsurePasswordChanged`
+     * is the control, and a client that ignores this field entirely still cannot
+     * reach a single other endpoint.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived. A
+     * sign-in that returned no way to learn this would put a person with a shared
+     * password on a dashboard that silently refuses everything, and the symptom —
+     * every request failing for no visible reason — is very hard to trace back to
+     * a missing field.
+     */
+    must_change_password: boolean
 }
 
 export interface AdminSignInResult {
@@ -136,6 +182,21 @@ export interface AdminSignInResult {
     renewal_token: string
     access_token_expires_at: string
     renewal_token_expires_at: string
+    /**
+     * Whether this account must replace its password before it can be used.
+     *
+     * A *courtesy*, not a control: it lets a front end route to the change screen
+     * instead of to a dashboard that will refuse every request. `EnsurePasswordChanged`
+     * is the control, and a client that ignores this field entirely still cannot
+     * reach a single other endpoint.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived. A
+     * sign-in that returned no way to learn this would put a person with a shared
+     * password on a dashboard that silently refuses everything, and the symptom —
+     * every request failing for no visible reason — is very hard to trace back to
+     * a missing field.
+     */
+    must_change_password: boolean
 }
 
 export interface SuperAdminSignInResult {
@@ -154,6 +215,21 @@ export interface SuperAdminSignInResult {
     renewal_token: string
     access_token_expires_at: string
     renewal_token_expires_at: string
+    /**
+     * Whether this account must replace its password before it can be used.
+     *
+     * A *courtesy*, not a control: it lets a front end route to the change screen
+     * instead of to a dashboard that will refuse every request. `EnsurePasswordChanged`
+     * is the control, and a client that ignores this field entirely still cannot
+     * reach a single other endpoint.
+     *
+     * Declared and validated rather than left to the shape of whatever arrived. A
+     * sign-in that returned no way to learn this would put a person with a shared
+     * password on a dashboard that silently refuses everything, and the symptom —
+     * every request failing for no visible reason — is very hard to trace back to
+     * a missing field.
+     */
+    must_change_password: boolean
 }
 
 /** Ask for a password reset link to be sent to an address. */
@@ -261,6 +337,7 @@ const signInResponse: Schema<{ data: SignInResult }> = object({
         renewal_token: string(),
         access_token_expires_at: string(),
         renewal_token_expires_at: string(),
+        must_change_password: boolean(),
     }),
 })
 
@@ -281,6 +358,7 @@ const workerSignInResponse: Schema<{ data: WorkerSignInResult }> = object({
         renewal_token: string(),
         access_token_expires_at: string(),
         renewal_token_expires_at: string(),
+        must_change_password: boolean(),
     }),
 })
 
@@ -309,6 +387,7 @@ const adminSignInResponse: Schema<{ data: AdminSignInResult }> = object({
         renewal_token: string(),
         access_token_expires_at: string(),
         renewal_token_expires_at: string(),
+        must_change_password: boolean(),
     }),
 })
 
@@ -320,6 +399,7 @@ const superAdminSignInResponse: Schema<{ data: SuperAdminSignInResult }> = objec
         renewal_token: string(),
         access_token_expires_at: string(),
         renewal_token_expires_at: string(),
+        must_change_password: boolean(),
     }),
 })
 
@@ -511,6 +591,7 @@ const renewedSessionResponse: Schema<{ data: RenewedSession }> = object({
         renewal_token: string(),
         access_token_expires_at: string(),
         renewal_token_expires_at: string(),
+        must_change_password: boolean(),
     }),
 })
 
@@ -673,25 +754,45 @@ const definitions = {
     // account type is then a literal in the path *and* in the guard, and cannot drift
     // apart between them.
     changePasswordUser: {
-        route: () => changePasswordUserRoute() satisfies Route,
+        // Resolved once, like `listProducts` and unlike `showAdmin`: this route takes
+        // no parameter, so there is nothing to defer. The four were written as
+        // `() => change()` and were never bound, which is why nothing type-checked
+        // against them — a function is not a `Route`, and the call that would have
+        // caught it was the binding that did not exist.
+        route: changePasswordUserRoute() satisfies Route,
         body: changePasswordRequest,
         response: currentAccountResponse,
     },
 
     changePasswordWorker: {
-        route: () => changePasswordWorkerRoute() satisfies Route,
+        // Resolved once, like `listProducts` and unlike `showAdmin`: this route takes
+        // no parameter, so there is nothing to defer. The four were written as
+        // `() => change()` and were never bound, which is why nothing type-checked
+        // against them — a function is not a `Route`, and the call that would have
+        // caught it was the binding that did not exist.
+        route: changePasswordWorkerRoute() satisfies Route,
         body: changePasswordRequest,
         response: currentAccountResponse,
     },
 
     changePasswordAdmin: {
-        route: () => changePasswordAdminRoute() satisfies Route,
+        // Resolved once, like `listProducts` and unlike `showAdmin`: this route takes
+        // no parameter, so there is nothing to defer. The four were written as
+        // `() => change()` and were never bound, which is why nothing type-checked
+        // against them — a function is not a `Route`, and the call that would have
+        // caught it was the binding that did not exist.
+        route: changePasswordAdminRoute() satisfies Route,
         body: changePasswordRequest,
         response: currentAccountResponse,
     },
 
     changePasswordSuperAdmin: {
-        route: () => changePasswordSuperAdminRoute() satisfies Route,
+        // Resolved once, like `listProducts` and unlike `showAdmin`: this route takes
+        // no parameter, so there is nothing to defer. The four were written as
+        // `() => change()` and were never bound, which is why nothing type-checked
+        // against them — a function is not a `Route`, and the call that would have
+        // caught it was the binding that did not exist.
+        route: changePasswordSuperAdminRoute() satisfies Route,
         body: changePasswordRequest,
         response: currentAccountResponse,
     },
@@ -916,6 +1017,35 @@ export interface Operations {
     signOutSuperAdmin(): Promise<SignOutResult>
 
     /**
+     * Replace the signed-in end user's password.
+     *
+     * `current_password` is required and is not a convenience. The access token
+     * proves who is asking; the current password proves it is the person rather
+     * than a copy of their session. Without it, anybody who found a token could
+     * set a new password and lock the real owner out permanently.
+     *
+     * Every *other* session the account held is withdrawn, on every device; this
+     * one is spared, so the caller is not signed out of the application it is
+     * standing in. Rejects with `validation` when the current password is wrong or
+     * the new one is unchanged — the back end keys those on `current_password` and
+     * `password` respectively, so a caller can put each message beside the right
+     * input without mapping status codes to fields itself.
+     */
+    changePasswordUser(input: { current_password: string; password: string }): Promise<CurrentAccount>
+
+    /** As {@link changePasswordUser}, at the worker's door. */
+    changePasswordWorker(input: { current_password: string; password: string }): Promise<CurrentAccount>
+
+    /** As {@link changePasswordUser}, at the administrator's door. */
+    changePasswordAdmin(input: { current_password: string; password: string }): Promise<CurrentAccount>
+
+    /** As {@link changePasswordUser}, at the super administrator's door. */
+    changePasswordSuperAdmin(input: {
+        current_password: string
+        password: string
+    }): Promise<CurrentAccount>
+
+    /**
      * Every product in the catalogue.
      *
      * The one operation on this API that needs no credential. It resolves with an
@@ -1117,6 +1247,49 @@ export function createOperations(client: ApiClient): Operations {
         async signOutSuperAdmin() {
             const { data } = await client.request(definitions.signOutSuperAdmin.route, {
                 response: definitions.signOutSuperAdmin.response,
+            })
+
+            return data
+        },
+        // The four change-password bindings, which were **absent** from this object
+        // until now: the operations were in `definitions`, in the contract and in
+        // the OpenAPI document, and there was no way to call any of them. Nothing
+        // caught it because `Operations` did not declare them either, so the type of
+        // the thing being built and the type it claimed to be agreed with each other
+        // and were both wrong. TypeScript could only have found it if the interface
+        // had listed the operations the contract promised — which is the half that
+        // was missing.
+        //
+        // `body` rather than `request`: the four definitions are the ones that send
+        // something, and the distinction is documented on `RequestOptions`.
+        async changePasswordUser(input) {
+            const { data } = await client.request(definitions.changePasswordUser.route, {
+                body: input,
+                response: definitions.changePasswordUser.response,
+            })
+
+            return data
+        },
+        async changePasswordWorker(input) {
+            const { data } = await client.request(definitions.changePasswordWorker.route, {
+                body: input,
+                response: definitions.changePasswordWorker.response,
+            })
+
+            return data
+        },
+        async changePasswordAdmin(input) {
+            const { data } = await client.request(definitions.changePasswordAdmin.route, {
+                body: input,
+                response: definitions.changePasswordAdmin.response,
+            })
+
+            return data
+        },
+        async changePasswordSuperAdmin(input) {
+            const { data } = await client.request(definitions.changePasswordSuperAdmin.route, {
+                body: input,
+                response: definitions.changePasswordSuperAdmin.response,
             })
 
             return data

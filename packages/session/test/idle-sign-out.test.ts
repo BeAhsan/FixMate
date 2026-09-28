@@ -59,6 +59,12 @@ describe('a session with nobody using it', () => {
                     return { message: 'Signed out.' }
                 },
                 whoAmI: async () => WHO_AM_I,
+                // Nothing in this file changes a password, and it throws rather than
+                // returning a plausible answer so that a test which reached it would
+                // fail loudly instead of passing on a fabricated success.
+                changePassword: async () => {
+                    throw new Error('this suite does not change passwords')
+                },
             },
             store,
             now: () => clock,
@@ -347,6 +353,12 @@ describe('a session with nobody using it', () => {
                 },
                 signOut: async () => ({ message: 'Signed out.' }),
                 whoAmI: async () => WHO_AM_I,
+                // Nothing in this file changes a password, and it throws rather than
+                // returning a plausible answer so that a test which reached it would
+                // fail loudly instead of passing on a fabricated success.
+                changePassword: async () => {
+                    throw new Error('this suite does not change passwords')
+                },
             },
         })
 
@@ -606,6 +618,11 @@ function signedIn(accessExpiresAt: number) {
         renewal_token: 'renewal-1',
         access_token_expires_at: new Date(accessExpiresAt).toISOString(),
         renewal_token_expires_at: new Date(RENEWAL_EXPIRES_AT).toISOString(),
+        // The idle rule is not about this, and it is `false` in every test here.
+        // Declared rather than omitted because the field is required by the shape
+        // the session is written against, and a stub that quietly leaves it out
+        // would be a stub of a response the back end does not send.
+        must_change_password: false,
     }
 }
 
@@ -626,5 +643,9 @@ function renewed(nth: number, firstExpiresAt: number) {
         renewal_token: `renewal-${nth + 1}`,
         access_token_expires_at: new Date(expiresAt).toISOString(),
         renewal_token_expires_at: new Date(RENEWAL_EXPIRES_AT).toISOString(),
+        // As at sign-in. See the note there: required by the shape, and false in
+        // every test in this file because none of them is about changing a
+        // password.
+        must_change_password: false,
     }
 }

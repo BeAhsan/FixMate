@@ -46,7 +46,15 @@ const RENEWAL_EXPIRES_AT = 9_000_000
  * Sign-in keeps the historical `token` key; renewal is explicit about
  * `access_token`. That asymmetry is the back end's, documented in IssuedTokens.
  */
-function signedIn() {
+/**
+ * Both fixtures take the flag rather than hard-coding `false`, because the field
+ * is load-bearing in two directions and a fixture that always said `false` would
+ * make every test here pass whether or not it was being read. Declaring it as a
+ * required field on the client's schema is what caught the omission the first
+ * time: the fake was refused with "does not match an object", which is the
+ * clearest possible demonstration that these shapes are the contract.
+ */
+function signedIn(mustChangePassword = false) {
     return {
         data: {
             token: 'access-1',
@@ -55,17 +63,19 @@ function signedIn() {
             renewal_token: 'renewal-1',
             access_token_expires_at: new Date(ACCESS_EXPIRES_AT).toISOString(),
             renewal_token_expires_at: new Date(RENEWAL_EXPIRES_AT).toISOString(),
+            must_change_password: mustChangePassword,
         },
     }
 }
 
-function renewed(accessToken = 'access-2', renewalToken = 'renewal-2') {
+function renewed(accessToken = 'access-2', renewalToken = 'renewal-2', mustChangePassword = false) {
     return {
         data: {
             access_token: accessToken,
             renewal_token: renewalToken,
             access_token_expires_at: new Date(ACCESS_EXPIRES_AT * 2).toISOString(),
             renewal_token_expires_at: new Date(RENEWAL_EXPIRES_AT).toISOString(),
+            must_change_password: mustChangePassword,
         },
     }
 }
@@ -93,6 +103,9 @@ describe('the session layer', () => {
                     throw new Error('not stubbed; use the fetch-level tests')
                 },
                 whoAmI: async () => {
+                    throw new Error('not stubbed; use the fetch-level tests')
+                },
+                changePassword: async () => {
                     throw new Error('not stubbed; use the fetch-level tests')
                 },
             },
@@ -143,6 +156,7 @@ describe('the session layer', () => {
                 renew: () => operations.renewSessionUser(),
                 signOut: () => operations.signOutUser(),
                 whoAmI: () => operations.currentUser(),
+                changePassword: (input) => operations.changePasswordUser(input),
             },
             store,
             now: () => clock,
@@ -205,12 +219,16 @@ describe('the session layer', () => {
                     renewal_token: 'the-renewal-token',
                     access_token_expires_at: new Date(1_000_000).toISOString(),
                     renewal_token_expires_at: new Date(9_000_000).toISOString(),
+                    must_change_password: false,
                 }),
                 renew: async () => {
                     throw new Error('unused')
                 },
                 signOut: async () => ({ message: 'Signed out.' }),
                 whoAmI: async () => ({ ...WHO_AM_I, abilities: [] }),
+                changePassword: async () => {
+                    throw new Error('not stubbed; use the fetch-level tests')
+                },
             },
         })
 
@@ -500,6 +518,7 @@ describe('the session layer', () => {
                     renewal_token: 'renewal-1',
                     access_token_expires_at: new Date(1_000_000).toISOString(),
                     renewal_token_expires_at: new Date(9_000_000).toISOString(),
+                    must_change_password: false,
                 }),
                 renew: async () => {
                     throw new ApiError({
@@ -513,6 +532,9 @@ describe('the session layer', () => {
                 },
                 signOut: async () => ({ message: 'Signed out.' }),
                 whoAmI: async () => ({ ...WHO_AM_I, abilities: [] }),
+                changePassword: async () => {
+                    throw new Error('not stubbed; use the fetch-level tests')
+                },
             },
             onError: (error) => errors.push(error),
         })
@@ -532,12 +554,16 @@ describe('the session layer', () => {
                     renewal_token: 'renewal-1',
                     access_token_expires_at: new Date(1_000_000).toISOString(),
                     renewal_token_expires_at: new Date(9_000_000).toISOString(),
+                    must_change_password: false,
                 }),
                 renew: async () => {
                     throw new Error('must not run')
                 },
                 signOut: async () => ({ message: 'Signed out.' }),
                 whoAmI: async () => ({ ...WHO_AM_I, abilities: [] }),
+                changePassword: async () => {
+                    throw new Error('not stubbed; use the fetch-level tests')
+                },
             },
         })
 
@@ -635,6 +661,7 @@ describe('knowing who the session belongs to', () => {
                     renewal_token: 'renewal-1',
                     access_token_expires_at: new Date(1_000_000).toISOString(),
                     renewal_token_expires_at: new Date(9_000_000).toISOString(),
+                    must_change_password: false,
                 }),
                 renew: async () => {
                     throw new Error('unused')
@@ -649,6 +676,9 @@ describe('knowing who the session belongs to', () => {
                         fields: {},
                         retryable: true,
                     })
+                },
+                changePassword: async () => {
+                    throw new Error('not stubbed; use the fetch-level tests')
                 },
             },
         })
@@ -676,6 +706,226 @@ describe('knowing who the session belongs to', () => {
         await session.restore()
 
         expect(session.account()).toBeNull()
+    })
+
+    // -----------------------------------------------------------------
+    // The account that must replace its password
+    //
+    // Story 21. The back end refuses every route except the change and sign-out,
+    // so this is the one account the session cannot read: `whoAmI` is refused, and
+    // a session that had learned the flag from the account would be learning it
+    // from the one call that always fails. It comes from sign-in and from renewal
+    // instead, which are the only two calls that can succeed.
+    // -----------------------------------------------------------------
+
+    it('learns at sign-in that the password must change, with no account to read', async () => {
+        session = sessionOverRealClient()
+        // The back end's actual answer for a flagged account: the sign-in succeeds
+        // and `me` is refused. Modelling it as a 200 with an empty account would
+        // make this test pass for a session that learned nothing.
+        respond = (url) =>
+            url.includes('/me')
+                ? json({ message: 'Choose a new password for this account before using it.' }, 403)
+                : url.includes('/sign-in')
+                  ? json(signedIn(true))
+                  : json(renewed())
+
+        await session.signIn('ada@example.test', 'password123')
+
+        expect(session.state).toBe('signed-in')
+        expect(session.mustChangePassword()).toBe(true)
+        // Stated so the reason this is on the session and not on the account is
+        // visible: the account genuinely could not be read.
+        expect(session.account()).toBeNull()
+    })
+
+    it('does not claim a change is needed for an ordinary account', async () => {
+        session = sessionOverRealClient()
+        respond = (url) => (url.includes('/me') ? json({ data: WHO_AM_I }) : json(signedIn(false)))
+
+        await session.signIn('ada@example.test', 'password123')
+
+        expect(session.mustChangePassword()).toBe(false)
+    })
+
+    it('learns it again from a renewal, which is all a page reload runs', async () => {
+        // The reason the back end exempts renewal from its guard. A session
+        // restored from browser storage has run no sign-in, so without this the
+        // only evidence would be the 403 on every other route — which a front end
+        // would have to recognise by its wording.
+        store = {
+            kind: 'held-by-client',
+            read: () => 'renewal-1',
+            write: () => {},
+            clear: () => {},
+        }
+        session = sessionOverRealClient()
+        respond = (url) =>
+            url.includes('/me')
+                ? json({ message: 'Choose a new password for this account before using it.' }, 403)
+                : json(renewed('access-2', 'renewal-2', true))
+
+        expect(await session.restore()).toBe(true)
+
+        expect(session.state).toBe('signed-in')
+        expect(session.mustChangePassword()).toBe(true)
+    })
+
+    it('clears the flag once the password has been changed', async () => {
+        // The other half of the reload story: a session that still believed it had
+        // to change its password would send the person straight back to a screen
+        // they had just satisfied, and they would have no way off it.
+        session = sessionOverRealClient()
+        respond = (url) =>
+            url.includes('/me')
+                ? json({ message: 'Choose a new password for this account before using it.' }, 403)
+                : url.includes('/sign-in')
+                  ? json(signedIn(true))
+                  : json(renewed())
+
+        await session.signIn('ada@example.test', 'password123')
+        expect(session.mustChangePassword()).toBe(true)
+
+        respond = (url) =>
+            url.includes('/password/change') ? json({ data: WHO_AM_I }) : json(renewed())
+
+        await session.changePassword('shared-one', 'ada-own-secret')
+
+        expect(session.mustChangePassword()).toBe(false)
+        // The account comes back with the change, because `me` was refused before it
+        // and the response is the one place the back end re-reads the account.
+        expect(session.account()?.name).toBe('Ada Lovelace')
+    })
+
+    it('sends the current password to the change door, and nothing that names an account', async () => {
+        // Asserted over the real client, because that is where the body is built. A
+        // test that only checked the arguments the session passed would pass
+        // against a client that dropped a field on the way out — and the field that
+        // matters is the one proving the person is present.
+        const bodies: string[] = []
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input)
+
+            // The change answers with the account, not with a token pair — the
+            // back end re-reads the account after storing the change and returns
+            // it, so the client does not have to make a second request to find out
+            // whether it worked. Ordered before `/me`, which the path does not
+            // contain but which a fall-through would otherwise answer with a 403,
+            // hiding the body being asserted.
+            if (url.includes('/password/change')) {
+                bodies.push(String(init?.body ?? ''))
+
+                return json({ data: WHO_AM_I })
+            }
+
+            return url.includes('/me')
+                ? json({ message: 'Choose a new password for this account before using it.' }, 403)
+                : url.includes('/sign-in')
+                  ? json(signedIn(true))
+                  : json(renewed())
+        })
+
+        const tokens = createAccessTokenSource()
+        const client = createApiClient({
+            baseUrl: BASE_URL,
+            fetch: fetchMock as unknown as typeof fetch,
+            getAccessToken: tokens.get,
+        })
+        const operations = createOperations(client)
+
+        session = createSession({
+            tokens,
+            operations: {
+                signIn: (input) => operations.signInUser(input),
+                renew: () => operations.renewSessionUser(),
+                signOut: () => operations.signOutUser(),
+                whoAmI: () => operations.currentUser(),
+                changePassword: (input) => operations.changePasswordUser(input),
+            },
+            store,
+            now: () => clock,
+            schedule: (runAt, task) => {
+                pending.push({ runAt, task })
+
+                return () => {
+                    pending = pending.filter((entry) => entry.task !== task)
+                }
+            },
+        })
+
+        await session.signIn('ada@example.test', 'password123')
+        await session.changePassword('shared-one', 'ada-own-secret')
+
+        expect(bodies).toHaveLength(1)
+
+        // `bodies[0]` rather than destructuring, so the assertion below is about a
+        // request that was made rather than about one that might not have been.
+        const body = JSON.parse(bodies[0] ?? '{}') as Record<string, unknown>
+
+        // The current password is the one field that cannot be optional: the access
+        // token proves who is asking, and this proves it is the person rather than a
+        // copy of their session.
+        expect(body['current_password']).toBe('shared-one')
+        expect(body['password']).toBe('ada-own-secret')
+        // No identifier of any kind. The account comes from the token, so a field
+        // naming one would be a way to aim the change at somebody else — and this
+        // is the one request on which that would be a full account takeover.
+        expect(Object.keys(body).sort()).toEqual(['current_password', 'password'])
+    })
+
+    it('keeps the flag when the change is refused', async () => {
+        // The back end keys a wrong current password on `current_password` and an
+        // unchanged new one on `password`, so the caller can put each message beside
+        // the right input. Both arrive as `fields`, and the session's own state must
+        // not be the thing that changes on a refusal.
+        session = sessionOverRealClient()
+        respond = (url) =>
+            url.includes('/me')
+                ? json({ message: 'Choose a new password for this account before using it.' }, 403)
+                : url.includes('/sign-in')
+                  ? json(signedIn(true))
+                  : json(renewed())
+
+        await session.signIn('ada@example.test', 'password123')
+
+        respond = (url) =>
+            url.includes('/password/change')
+                ? json(
+                      {
+                          message: 'The given data was invalid.',
+                          errors: { current_password: ['That is not your current password.'] },
+                      },
+                      422,
+                  )
+                : json(renewed())
+
+        await expect(session.changePassword('wrong', 'ada-own-secret')).rejects.toThrow(
+            'The given data was invalid.',
+        )
+
+        expect(session.mustChangePassword()).toBe(true)
+        expect(session.state).toBe('signed-in')
+    })
+
+    it('forgets the flag when the session ends, so the next one is not misled', async () => {
+        // A session that ends must not leave a claim about a password behind. The
+        // next sign-in sets it from its own response, so a stale value here would
+        // only ever be a value nothing can correct.
+        session = sessionOverRealClient()
+        respond = (url) =>
+            url.includes('/me')
+                ? json({ message: 'Choose a new password for this account before using it.' }, 403)
+                : url.includes('/sign-in')
+                  ? json(signedIn(true))
+                  : json(renewed())
+
+        await session.signIn('ada@example.test', 'password123')
+        expect(session.mustChangePassword()).toBe(true)
+
+        respond = () => json({ message: 'Unauthenticated.' }, 401)
+        await session.signOut()
+
+        expect(session.mustChangePassword()).toBe(false)
     })
 })
 })

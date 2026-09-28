@@ -179,8 +179,17 @@ Route::prefix('v1/identity')
                 'admins' => AccountType::Admin,
                 'super-admins' => AccountType::SuperAdmin,
             ] as $segment => $type) {
+                // Renewal is exempt, and used not to be. See the block comment
+                // below the loop, which is the long version; the short version is
+                // that an access token bought by a renewal is still refused by this
+                // guard on every route except the two exempt ones, so renewing buys
+                // no reach - it only keeps the person from being thrown back to the
+                // sign-in screen by a page reload in the middle of choosing a
+                // password. The response now reports `must_change_password`, so the
+                // front end can put them back where they were.
                 Route::post("/{$segment}/session/renew", RenewSessionController::class)
                     ->middleware('session.can:'.$type->value)
+                    ->withoutMiddleware(EnsurePasswordChanged::ALIAS)
                     ->name("{$segment}.session.renew");
 
                 // `withoutMiddleware` rather than a path check inside the guard, so the
@@ -191,12 +200,56 @@ Route::prefix('v1/identity')
                 // a shared device who must change their password is *most* entitled to
                 // end the session, and signing out revokes their own tokens - a
                 // strictly larger reduction in their access than the guard could
-                // produce. Renewal is not exempt: a renewal token in browser storage
-                // that keeps buying access tokens would undo the whole rule.
+                // produce.
                 Route::post("/{$segment}/sign-out", SignOutController::class)
                     ->withoutMiddleware(EnsurePasswordChanged::ALIAS)
                     ->name("{$segment}.sign-out");
             }
+
+            // Three routes are exempt from `EnsurePasswordChanged`: the change
+            // itself, sign-out, and renewal. The first two always were and their
+            // reasons are on the routes. Renewal is the one that changed, and the
+            // change is worth being precise about, because the obvious argument
+            // against it is strong and wrong.
+            //
+            // The argument against: a renewal token lives in browser storage, where
+            // injected script can read it, and if it can keep buying access tokens
+            // then "you must change your password" is undone by standing still.
+            //
+            // Why that does not follow: **the access token it buys is refused by this
+            // very guard.** `EnsurePasswordChanged` sits on the group, and the only
+            // two routes out of it are the change and sign-out. A renewal therefore
+            // mints a token that can reach nothing - not `me`, not the catalogue, not
+            // another account's records. It cannot undo the rule, because the rule is
+            // enforced on the token's *use* and not on the token's existence.
+            // Refusing renewal bought no security; it bought a page reload in the
+            // middle of choosing a password.
+            //
+            // And that was not hypothetical. Renewal is how a session survives a
+            // reload, because the access token is in memory only. The sequence was:
+            // sign in, be routed to the change screen, start choosing a password,
+            // refresh or lose the connection, renewal refused with a 403, session
+            // dropped, and the sign-in screen says "your account cannot be used at
+            // the moment, please contact an administrator" - which is false, and
+            // sends a person with a working account to an administrator for a
+            // password they can change themselves. Story 21 is about a shared
+            // password never being in use; it is not about the person being unable
+            // to reach the form that fixes it.
+            //
+            // What makes this safe rather than merely defensible is that the renewal
+            // response reports `must_change_password`, so a front end restoring a
+            // session from storage learns the account is still flagged and routes
+            // back to the change screen. Before, the only honest thing a front end
+            // could have done with that 403 was parse the message - which this
+            // repository forbids elsewhere, for exactly the reason it should be
+            // forbidden here. A field the back end sends beats a sentence a client
+            // reverse-engineers.
+            //
+            // The test that pinned the old behaviour was
+            // `test_renewal_is_refused_too_which_is_the_whole_point`. It now
+            // asserts the opposite in a form that would catch a regression: the
+            // renewal succeeds, AND the access token it mints is still refused
+            // everywhere else. The second half was the point all along.
 
             // Replace the signed-in account's password.
             //

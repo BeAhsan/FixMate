@@ -67,12 +67,14 @@ export interface SessionOperations {
         renewal_token: string
         access_token_expires_at: string
         renewal_token_expires_at: string
+        must_change_password: boolean
     }>
     renew(): Promise<{
         access_token: string
         renewal_token: string
         access_token_expires_at: string
         renewal_token_expires_at: string
+        must_change_password: boolean
     }>
     signOut(): Promise<{ message: string }>
     /**
@@ -86,6 +88,26 @@ export interface SessionOperations {
      * either an empty header or a navigation offering a link that will refuse.
      */
     whoAmI(): Promise<{
+        account_type: string
+        account: { id: number; name: string; email: string; status: string }
+        abilities: string[]
+    }>
+    /**
+     * Replace the signed-in account's password.
+     *
+     * Part of the session for the same reason `whoAmI` is: the account type is
+     * already bound to this application's operations, so the four front ends never
+     * name a change-password operation and an application cannot reach another
+     * account type's door by trying.
+     *
+     * `current_password` is not a convenience. The access token proves who is
+     * asking; the current password proves it is the person rather than a copy of
+     * their session.
+     */
+    changePassword(input: {
+        current_password: string
+        password: string
+    }): Promise<{
         account_type: string
         account: { id: number; name: string; email: string; status: string }
         abilities: string[]
@@ -158,6 +180,18 @@ export interface SessionAccount {
     abilities: string[]
 }
 
+/**
+ * Whether this account has to replace its password before it can be used.
+ *
+ * Separate from {@link SessionAccount} and held on the session itself, because it
+ * survives the account being unreadable — and while the flag is set, `whoAmI` is
+ * one of the routes the back end refuses. An account that has to change its
+ * password is the one account this package cannot read, so anything the front end
+ * needs to know about that account has to come from sign-in and renewal rather
+ * than from the account itself.
+ */
+export type MustChangePassword = boolean
+
 export interface Session {
     /** The current state, for a shell to render from. */
     readonly state: SessionState
@@ -174,6 +208,36 @@ export interface Session {
      * and a session layer that filled one in would be labelling itself on trust.
      */
     account(): SessionAccount | null
+    /**
+     * Whether this account must replace its password, or false before the back end
+     * has said.
+     *
+     * False rather than null while unknown, and that is a deliberate asymmetry with
+     * {@link Session.account}: this one defaults to *false* because it is a
+     * routing decision, and routing somebody to the change screen they do not need
+     * would be the worse mistake. The back end is the control either way — a client
+     * that sends an account here when it did not need to be here is making a useless
+     * request, not a permitted one.
+     *
+     * Reported by sign-in and by renewal, which are the only two calls that can
+     * succeed for a flagged account. That is the whole reason renewal is exempt from
+     * the back end's guard: without it, reloading this page signs the person out and
+     * tells them their account cannot be used, which is false.
+     */
+    mustChangePassword(): MustChangePassword
+    /**
+     * Replace the signed-in account's password.
+     *
+     * Clears {@link Session.mustChangePassword} on success, because the back end
+     * cleared the flag and the two must not disagree: a session that still believed
+     * it had to change its password would send the person straight back to a screen
+     * they had just satisfied.
+     *
+     * Every *other* session the account held is withdrawn by the back end, and this
+     * one is spared, so the person is not signed out of the application they are
+     * standing in.
+     */
+    changePassword(currentPassword: string, newPassword: string): Promise<void>
     /**
      * Attempt to restore a session from the stored renewal token.
      *

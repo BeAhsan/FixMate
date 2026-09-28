@@ -54,6 +54,17 @@ export function createSession(options: SessionOptions): Session {
     let endedBecause: SessionEndReason | null = null
     let accessTokenExpiresAt: number | null = null
     let account: SessionAccount | null = null
+    /**
+     * Whether this account must replace its password.
+     *
+     * Set from sign-in and from renewal, which are the only two calls that succeed
+     * for a flagged account — `whoAmI` is refused by the back end's guard while the
+     * flag is set, so it can never be the source. Kept beside `account` rather than
+     * inside it for that reason, and it is the reason the renewal route is exempt
+     * from the guard: a page reload used to destroy the session here, which signed
+     * the person out mid-form and told them their account could not be used.
+     */
+    let mustChangePassword = false
     let restoring: Promise<boolean> | null = null
     let cancelScheduledRenewal: (() => void) | null = null
     let cancelScheduledIdleCheck: (() => void) | null = null
@@ -189,9 +200,17 @@ export function createSession(options: SessionOptions): Session {
         renewal_token: string
         access_token_expires_at: string
         renewal_token_expires_at: string
+        must_change_password: boolean
     }) => {
         tokens.set(renewed.access_token)
         accessTokenExpiresAt = Date.parse(renewed.access_token_expires_at)
+
+        // Read from every renewal, not only at sign-in, because a page reload runs a
+        // renewal and nothing else. A session restored from browser storage would
+        // otherwise not know the account still has to choose a password, and the
+        // front end's only remaining evidence would be the 403 that every other route
+        // returns — which it would have to recognise by its wording.
+        mustChangePassword = renewed.must_change_password
 
         // The rotated token replaces the one just spent, every time. If this
         // write is skipped the next renewal presents a token the back end has
@@ -254,6 +273,11 @@ export function createSession(options: SessionOptions): Session {
         accessTokenExpiresAt = null
         store.clear()
         account = null
+        // Cleared with the account. A session that ends must not leave behind a
+        // claim about a password, and the next sign-in sets it again from its own
+        // response — so this is not a place where a stale value could survive into
+        // a new session.
+        mustChangePassword = false
         publish('signed-out', reason)
     }
 
@@ -313,6 +337,37 @@ export function createSession(options: SessionOptions): Session {
         accessToken: () => tokens.get(),
         accessTokenExpiresAt: () => accessTokenExpiresAt,
         account: () => account,
+        mustChangePassword: () => mustChangePassword,
+
+        async changePassword(currentPassword, newPassword) {
+            const answer = await operations.changePassword({
+                current_password: currentPassword,
+                password: newPassword,
+            })
+
+            // The account is taken from the response rather than left null. The
+            // back end re-reads the account after storing the change and returns it,
+            // so this is not a second request for something already in hand — and it
+            // matters more than usual here, because `whoAmI` is one of the routes a
+            // flagged account is refused, so a `readAccount()` after the change is the
+            // one call in this flow that can still fail.
+            account = {
+                accountType: answer.account_type,
+                name: answer.account.name,
+                email: answer.account.email,
+                abilities: answer.abilities,
+            }
+
+            // Cleared because the back end cleared it. Left set, the session would
+            // send the person straight back to a screen they had just satisfied, and
+            // they would have no way out of it.
+            mustChangePassword = false
+
+            // Published rather than left silent: a subscriber watching the session
+            // is deciding whether to show a dashboard or a change screen, and it
+            // cannot know the answer changed until it is told.
+            publish('signed-in', null)
+        },
 
         noteActivity() {
             // Ignored while there is no session. Recording activity on the sign-in
@@ -349,6 +404,12 @@ export function createSession(options: SessionOptions): Session {
 
             tokens.set(result.token)
             accessTokenExpiresAt = Date.parse(result.access_token_expires_at)
+
+            // Before `establish()`, which calls `readAccount()` — and that call is
+            // refused by the back end while the flag is set, so an account that must
+            // change its password is the one account this cannot read. The flag
+            // therefore comes from the sign-in response and nowhere else.
+            mustChangePassword = result.must_change_password
 
             if (store.kind === 'held-by-client') {
                 store.write(result.renewal_token)

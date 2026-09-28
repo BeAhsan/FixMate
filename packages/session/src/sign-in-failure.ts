@@ -61,6 +61,66 @@ export function describeSignInFailure(error: unknown): SignInFailure {
  * structural check cannot drift that way, and it is the only check that keeps
  * working if the error is ever re-thrown across a boundary.
  */
+/**
+ * A failure from the change-password screen.
+ *
+ * The same shape as {@link SignInFailure} and for the same reasons, but it is a
+ * separate type rather than a shared one because the two screens have different
+ * jobs: this one's failures are almost always per-field, and the caller needs to
+ * know a message exists at all before it decides whether to show one beside a
+ * field or on its own.
+ */
+export interface PasswordChangeFailure {
+    message: string
+    /** The back end's per-field messages, when it sent any. */
+    fields?: Record<string, string[]>
+}
+
+/**
+ * What to show a person whose password change was refused.
+ *
+ * The back end's wording is passed through verbatim, and the reason is the same
+ * one that governs the sign-in refusal: a second wording written here is a second
+ * chance to leak which check failed, and this endpoint's per-field messages are
+ * precise on purpose. A wrong current password and a new password that is
+ * unchanged are different problems with different fixes, and the back end names
+ * the field each belongs to.
+ *
+ * The two rewritten cases are the two where the back end said nothing useful, and
+ * they are the same two as in {@link describeSignInFailure}: no response at all,
+ * and a response that no longer matches the declared shape. In both, the problem
+ * is not the password.
+ */
+export function describePasswordChangeFailure(error: unknown): PasswordChangeFailure {
+    if (!isApiError(error)) {
+        return { message: 'Something went wrong changing your password. Please try again.' }
+    }
+
+    switch (error.kind) {
+        case 'network':
+            return {
+                message: 'Could not reach the FixMate service. Check your connection and try again.',
+            }
+
+        case 'contract':
+            return {
+                message:
+                    'The service replied in a shape this application does not recognise, so the password could not be changed.',
+            }
+
+        case 'unauthenticated':
+            // A 401 here means the session went away between the form being shown
+            // and the change being submitted — an expired access token, or a
+            // sign-out in another tab. Every other route in the application would
+            // fail the same way, so the redirect to sign-in is already in place and
+            // this only has to not be alarming.
+            return { message: 'Your session has ended. Please sign in again.' }
+
+        default:
+            return { message: error.message, fields: error.fields }
+    }
+}
+
 function isApiError(error: unknown): error is {
     kind: string
     message: string

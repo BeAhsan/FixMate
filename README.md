@@ -412,12 +412,20 @@ An account created above signs in, and is then refused by every route except
 password and a new one, and withdraws every other session the account had — a
 session opened with the old password keeps working however new the stored hash is.
 
-**No front end calls that route yet.** The four dashboards are shell-only, so
-nothing reads the sign-in flag and routes to a change screen. Until that exists, a
-provisioned account reaches its new password through the ordinary "forgot password"
-flow, which is outside the guard and therefore still works. That gap is the
-remaining piece of ticket 26, and it is a front-end change rather than a back-end
-one.
+**All four applications call that route, at `/change-password/`.** A provisioned
+account is routed there straight from sign-in rather than to a dashboard whose
+every request would be refused, and the screen offers a way out without choosing a
+password — somebody on a shared device is *most* entitled to leave. The ordinary
+"forgot password" flow still works and is still outside the guard, so it remains
+an escape hatch.
+
+**Renewal is exempt from the guard, and reports the flag.** It is the only way a
+session survives a page reload, and the access token a renewal mints is refused by
+`EnsurePasswordChanged` on every route except the change and sign-out — so
+renewing buys no reach. Without the exemption, reloading the change screen signed
+the person out mid-form and told them their account could not be used, which is
+false. `must_change_password` in the renewal response is what lets the front end
+put them back where they were.
 
 ## Things worth knowing
 

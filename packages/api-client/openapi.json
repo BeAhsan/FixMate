@@ -707,7 +707,7 @@
           "Customer"
         ],
         "summary": "Renew the customer session.",
-        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
+        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.\n\n**This route answers even when the account must change its password.** `EnsurePasswordChanged` exempts it, sign-out and the change itself. The exemption is safe because the access token returned here is still refused by that guard on every other route: a renewal mints a token that can reach nothing, so it cannot be used to walk around the rule, and refusing it only meant that a person who refreshed the change-password screen was signed out and told their account could not be used. `must_change_password` in the response is what lets a front end put them back where they were.",
         "security": [
           {
             "bearerAuth": []
@@ -774,7 +774,7 @@
           "Worker"
         ],
         "summary": "Renew the worker session.",
-        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
+        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.\n\n**This route answers even when the account must change its password.** `EnsurePasswordChanged` exempts it, sign-out and the change itself. The exemption is safe because the access token returned here is still refused by that guard on every other route: a renewal mints a token that can reach nothing, so it cannot be used to walk around the rule, and refusing it only meant that a person who refreshed the change-password screen was signed out and told their account could not be used. `must_change_password` in the response is what lets a front end put them back where they were.",
         "security": [
           {
             "bearerAuth": []
@@ -841,7 +841,7 @@
           "Administrator"
         ],
         "summary": "Renew the administrator session.",
-        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
+        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.\n\n**This route answers even when the account must change its password.** `EnsurePasswordChanged` exempts it, sign-out and the change itself. The exemption is safe because the access token returned here is still refused by that guard on every other route: a renewal mints a token that can reach nothing, so it cannot be used to walk around the rule, and refusing it only meant that a person who refreshed the change-password screen was signed out and told their account could not be used. `must_change_password` in the response is what lets a front end put them back where they were.",
         "security": [
           {
             "bearerAuth": []
@@ -908,7 +908,7 @@
           "Super administrator"
         ],
         "summary": "Renew the super administrator session.",
-        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
+        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.\n\n**This route answers even when the account must change its password.** `EnsurePasswordChanged` exempts it, sign-out and the change itself. The exemption is safe because the access token returned here is still refused by that guard on every other route: a renewal mints a token that can reach nothing, so it cannot be used to walk around the rule, and refusing it only meant that a person who refreshed the change-password screen was signed out and told their account could not be used. `must_change_password` in the response is what lets a front end put them back where they were.",
         "security": [
           {
             "bearerAuth": []
@@ -1507,7 +1507,8 @@
             "required": [
               "token",
               "user",
-              "abilities"
+              "abilities",
+              "must_change_password"
             ],
             "additionalProperties": false,
             "properties": {
@@ -1519,6 +1520,10 @@
               },
               "abilities": {
                 "$ref": "#/components/schemas/Abilities"
+              },
+              "must_change_password": {
+                "type": "boolean",
+                "description": "Whether this account must replace its password before it can be used. Reported at sign-in so a front end can route to the change screen rather than to a dashboard that will refuse every request. **Advisory, not a control** — `EnsurePasswordChanged` is the control, and a client that ignores this field still cannot reach a single other endpoint."
               }
             }
           }
@@ -1536,7 +1541,8 @@
             "required": [
               "token",
               "worker",
-              "abilities"
+              "abilities",
+              "must_change_password"
             ],
             "additionalProperties": false,
             "properties": {
@@ -1548,6 +1554,10 @@
               },
               "abilities": {
                 "$ref": "#/components/schemas/Abilities"
+              },
+              "must_change_password": {
+                "type": "boolean",
+                "description": "Whether this account must replace its password before it can be used. Reported at sign-in so a front end can route to the change screen rather than to a dashboard that will refuse every request. **Advisory, not a control** — `EnsurePasswordChanged` is the control, and a client that ignores this field still cannot reach a single other endpoint."
               }
             }
           }
@@ -1565,7 +1575,8 @@
             "required": [
               "token",
               "admin",
-              "abilities"
+              "abilities",
+              "must_change_password"
             ],
             "additionalProperties": false,
             "properties": {
@@ -1577,6 +1588,10 @@
               },
               "abilities": {
                 "$ref": "#/components/schemas/Abilities"
+              },
+              "must_change_password": {
+                "type": "boolean",
+                "description": "Whether this account must replace its password before it can be used. Reported at sign-in so a front end can route to the change screen rather than to a dashboard that will refuse every request. **Advisory, not a control** — `EnsurePasswordChanged` is the control, and a client that ignores this field still cannot reach a single other endpoint."
               }
             }
           }
@@ -1594,7 +1609,8 @@
             "required": [
               "token",
               "super_admin",
-              "abilities"
+              "abilities",
+              "must_change_password"
             ],
             "additionalProperties": false,
             "properties": {
@@ -1606,6 +1622,10 @@
               },
               "abilities": {
                 "$ref": "#/components/schemas/Abilities"
+              },
+              "must_change_password": {
+                "type": "boolean",
+                "description": "Whether this account must replace its password before it can be used. Reported at sign-in so a front end can route to the change screen rather than to a dashboard that will refuse every request. **Advisory, not a control** — `EnsurePasswordChanged` is the control, and a client that ignores this field still cannot reach a single other endpoint."
               }
             }
           }
@@ -1819,7 +1839,8 @@
               "access_token",
               "renewal_token",
               "access_token_expires_at",
-              "renewal_token_expires_at"
+              "renewal_token_expires_at",
+              "must_change_password"
             ],
             "properties": {
               "access_token": {
@@ -1839,6 +1860,10 @@
                 "type": "string",
                 "format": "date-time",
                 "description": "A hard ceiling, whether or not the token is used. Renewal rotates it; this is what stops an unused one being kept indefinitely."
+              },
+              "must_change_password": {
+                "type": "boolean",
+                "description": "Whether this account must replace its password. Reported here for the same reason it is reported at sign-in, and renewal is the only call that happens on a page reload: a front end restoring a session from browser storage has run no sign-in, so without this field the only evidence that the account is flagged would be the 403 every other route returns. Acting on that would mean matching on the back end's wording, which is a second place where that sentence's meaning is decided. The renewal itself succeeds, and the access token it returns is still refused by the guard on every route except the change and sign-out — the rule is enforced on the token's use, not on its existence."
               }
             }
           }

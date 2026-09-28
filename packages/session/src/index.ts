@@ -22,8 +22,8 @@ export type {
     SentAutomaticallyStore,
 } from './renewal-token-store'
 
-export { describeSignInFailure } from './sign-in-failure'
-export type { SignInFailure } from './sign-in-failure'
+export { describePasswordChangeFailure, describeSignInFailure } from './sign-in-failure'
+export type { PasswordChangeFailure, SignInFailure } from './sign-in-failure'
 
 export {
     OPERATIONS_BY_APPLICATION,
@@ -32,15 +32,23 @@ export {
 } from './application-operations'
 export type { ApplicationKey } from './application-operations'
 
-export { createApplication, explanationFor, SignInForm } from './react/application'
+export {
+    createApplication,
+    destinationFor,
+    explanationFor,
+    SignInForm,
+    ChangePasswordForm,
+} from './react/application'
 export type {
     Application,
     ApplicationDefinition,
     SignInFormProps,
+    ChangePasswordFormProps,
 } from './react/application'
 
 export type {
     AccountKind,
+    MustChangePassword,
     Session,
     SessionAccount,
     SessionEndReason,
