@@ -105,6 +105,25 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Overrides the HTTP check baked into the image by `HEALTHCHECK` in the
+    # Dockerfile. This container runs queue:work in the foreground rather than
+    # nginx, so nothing listens on port 80 and the inherited check can only ever
+    # fail - it reports a perfectly healthy worker as unhealthy after ~90s of
+    # real time (start-period 20s, interval 30s, retries 3), which teaches
+    # everyone to ignore the health column. docker-compose.prod.yml has carried
+    # this same override for the same reason; it was missing here, and the two
+    # files disagreeing is the whole bug.
+    #
+    # Reads PID 1's command line rather than searching the process list with
+    # pgrep, which matches the health-check shell itself. See the prod file for
+    # the longer version of that argument; it is the same check for the same
+    # reason, and it does not prove the worker can reach the database.
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa 'queue:work' /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks: [fixmate]
 
   scheduler:
@@ -122,6 +141,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Same override as the queue worker, for the same reason. The app is the
+    # only one of the three that serves HTTP, so it is the only one the image's
+    # baked-in check means anything for.
+    healthcheck:
+      test: ["CMD-SHELL", "grep -qa 'schedule:work' /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks: [fixmate]
 
   # -------------------------------------------------------------------------
