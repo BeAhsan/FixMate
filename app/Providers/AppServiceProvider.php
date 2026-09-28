@@ -2,12 +2,14 @@
 
 namespace App\Providers;
 
+use App\Domain\Catalog\Repositories\ProductRepository;
 use App\Domain\IdentityAndAccess\Repositories\AdminRepository;
 use App\Domain\IdentityAndAccess\Repositories\EndUserRepository;
 use App\Domain\IdentityAndAccess\Repositories\SuperAdminRepository;
 use App\Domain\IdentityAndAccess\Repositories\WorkerRepository;
 use App\Domain\IdentityAndAccess\Services\AuthenticationService;
 use App\Domain\IdentityAndAccess\Services\SessionRevoker;
+use App\Infrastructure\Catalog\Repositories\EloquentProductRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentAdminRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentEndUserRepository;
 use App\Infrastructure\IdentityAndAccess\Repositories\EloquentSuperAdminRepository;
@@ -99,6 +101,13 @@ class AppServiceProvider extends ServiceProvider
         // silently shared one would be sharing a decision about which sessions
         // exist.
         $this->app->bind(SessionRevoker::class, SanctumSessionRevoker::class);
+
+        // The Catalog context's one repository, wired the same way as the four
+        // above: a domain interface in the use case, one Eloquent implementation
+        // in infrastructure, and the binding in exactly one place. Kept separate
+        // rather than added to the identity group so the catalogue does not
+        // inherit anything about credential stores.
+        $this->app->bind(ProductRepository::class, EloquentProductRepository::class);
 
         // The domain service needs the application's bcrypt cost so that its
         // decoy hash is as expensive to compute as a real one. Reading it here

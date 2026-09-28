@@ -203,6 +203,12 @@
       "route": "admins.promote",
       "method": "post",
       "path": "/api/v1/identity/admins/{admin}/promote"
+    },
+    {
+      "name": "listProducts",
+      "route": "products.index",
+      "method": "get",
+      "path": "/api/products"
     }
   ]
 }

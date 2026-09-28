@@ -34,6 +34,7 @@ use App\Http\Controllers\Auth\UserLoginController;
 use App\Http\Controllers\Auth\UserPasswordResetController;
 use App\Http\Controllers\Auth\WorkerLoginController;
 use App\Http\Controllers\Auth\WorkerPasswordResetController;
+use App\Http\Controllers\Catalog\IndexProductsController;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Providers\AppServiceProvider;
 
@@ -282,3 +283,23 @@ Route::prefix('v1/identity')
                 ->name('admins.promote');
         });
     });
+
+// Catalog context routes
+//
+// The catalogue is public, so this group is the only one in the file that
+// deliberately names no `auth:sanctum` and no `account.can`. That absence is the
+// contract, not an oversight: the front end is coded against an unauthenticated
+// `GET /api/products`, and adding a guard here would turn every catalogue request
+// into a 401. Keep it stated here and in IndexProductsController.
+//
+// No `v1/` prefix, unlike the Identity group above, because the path is fixed by
+// that contract. AGENTS.md notes the prefix belongs to "whichever ticket adds the
+// first real route group", and this is that group - so the decision is recorded
+// on ZAL-9 rather than made silently here. Adding `/v1` to a path a front end
+// has already been written against is a breaking change, and doing it after the
+// first release is a migration. Worth deciding on its own ticket, not as a
+// side-effect of shipping a catalogue.
+Route::middleware(['api'])->group(function () {
+    Route::get('/products', IndexProductsController::class)
+        ->name('products.index');
+});

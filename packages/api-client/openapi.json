@@ -39,6 +39,10 @@
     {
       "name": "Accounts",
       "description": "The account-management surface, which is super administrators only."
+    },
+    {
+      "name": "Catalog",
+      "description": "The public product catalogue. The one surface on this API that carries no credential: it is readable by anyone, which is a property of the route and not an oversight."
     }
   ],
   "paths": {
@@ -262,7 +266,7 @@
           "Customer"
         ],
         "summary": "Redeem a customer reset link.",
-        "description": "The link is single use and it is checked before the password is, so a password refused under `errors.password` leaves the link usable. A link that is spent or has expired is refused under `errors.password_reset` \u2014 a different failure with a different fix, told apart here even though neither says whether an account exists.\n\nNot throttled, unlike the link request: this endpoint cannot be flooded with mail.",
+        "description": "The link is single use and it is checked before the password is, so a password refused under `errors.password` leaves the link usable. A link that is spent or has expired is refused under `errors.password_reset` — a different failure with a different fix, told apart here even though neither says whether an account exists.\n\nNot throttled, unlike the link request: this endpoint cannot be flooded with mail.",
         "security": [],
         "requestBody": {
           "required": true,
@@ -652,7 +656,7 @@
           "Accounts"
         ],
         "summary": "Read one administrator's record.",
-        "description": "A super administrator function. The token must belong to a super administrator and carry `accounts:read`; an administrator is refused with a 403 whether or not the identifier in the path exists.\n\nThat is deliberate. A 404 for a record you may not see would make this endpoint a way of discovering which administrator accounts exist, so a caller that receives a 404 can be sure it was allowed to ask. The identifier is a positive integer, so anything else is a 404 rather than a server error.\n\nThe identifier is not a bound model, and must not become one: model binding resolves before the authorisation middleware runs, so a bound model would answer 404 for an identifier that does not exist and 403 for one that does \u2014 the same oracle, reintroduced.",
+        "description": "A super administrator function. The token must belong to a super administrator and carry `accounts:read`; an administrator is refused with a 403 whether or not the identifier in the path exists.\n\nThat is deliberate. A 404 for a record you may not see would make this endpoint a way of discovering which administrator accounts exist, so a caller that receives a 404 can be sure it was allowed to ask. The identifier is a positive integer, so anything else is a 404 rather than a server error.\n\nThe identifier is not a bound model, and must not become one: model binding resolves before the authorisation middleware runs, so a bound model would answer 404 for an identifier that does not exist and 403 for one that does — the same oracle, reintroduced.",
         "security": [
           {
             "bearerAuth": []
@@ -703,7 +707,7 @@
           "Customer"
         ],
         "summary": "Renew the customer session.",
-        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" \u2014 the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
+        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
         "security": [
           {
             "bearerAuth": []
@@ -737,7 +741,7 @@
           "Customer"
         ],
         "summary": "Sign out of every customer session.",
-        "description": "Revoke every token this account holds, in all four applications.\n\nAll of them, not the one presented, because a person who signs out of one application while signed in to another expects to be signed out of both \u2014 and a front end cannot reach into another application's memory to do it, so the guarantee has to be that the credential the other application holds stops being accepted.\n\nThe renewal tokens go too, which is what stops the sign-out being undone by a page load.\n\nThis route is guarded by the token alone, with no `account.can`. Refusing a renewal token here would break the commonest case: an expired access token is the normal reason to sign out, and the renewal token is the credential still alive. Revoking tokens can only affect the account presenting them.",
+        "description": "Revoke every token this account holds, in all four applications.\n\nAll of them, not the one presented, because a person who signs out of one application while signed in to another expects to be signed out of both — and a front end cannot reach into another application's memory to do it, so the guarantee has to be that the credential the other application holds stops being accepted.\n\nThe renewal tokens go too, which is what stops the sign-out being undone by a page load.\n\nThis route is guarded by the token alone, with no `account.can`. Refusing a renewal token here would break the commonest case: an expired access token is the normal reason to sign out, and the renewal token is the credential still alive. Revoking tokens can only affect the account presenting them.",
         "security": [
           {
             "bearerAuth": []
@@ -758,7 +762,7 @@
             "$ref": "#/components/responses/Unauthenticated"
           }
         },
-        "x-authorisation": "The token alone. Deliberately not `account.can`, which would refuse a renewal token \u2014 and an expired access token is the normal reason for signing out, so refusing the renewal token would leave a working one in storage that signs the person straight back in. Revoking tokens can only affect the account presenting them, so there is nothing for an account-type guard to protect."
+        "x-authorisation": "The token alone. Deliberately not `account.can`, which would refuse a renewal token — and an expired access token is the normal reason for signing out, so refusing the renewal token would leave a working one in storage that signs the person straight back in. Revoking tokens can only affect the account presenting them, so there is nothing for an account-type guard to protect."
       }
     },
     "/api/v1/identity/workers/session/renew": {
@@ -770,7 +774,7 @@
           "Worker"
         ],
         "summary": "Renew the worker session.",
-        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" \u2014 the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
+        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
         "security": [
           {
             "bearerAuth": []
@@ -804,7 +808,7 @@
           "Worker"
         ],
         "summary": "Sign out of every worker session.",
-        "description": "Revoke every token this account holds, in all four applications.\n\nAll of them, not the one presented, because a person who signs out of one application while signed in to another expects to be signed out of both \u2014 and a front end cannot reach into another application's memory to do it, so the guarantee has to be that the credential the other application holds stops being accepted.\n\nThe renewal tokens go too, which is what stops the sign-out being undone by a page load.\n\nThis route is guarded by the token alone, with no `account.can`. Refusing a renewal token here would break the commonest case: an expired access token is the normal reason to sign out, and the renewal token is the credential still alive. Revoking tokens can only affect the account presenting them.",
+        "description": "Revoke every token this account holds, in all four applications.\n\nAll of them, not the one presented, because a person who signs out of one application while signed in to another expects to be signed out of both — and a front end cannot reach into another application's memory to do it, so the guarantee has to be that the credential the other application holds stops being accepted.\n\nThe renewal tokens go too, which is what stops the sign-out being undone by a page load.\n\nThis route is guarded by the token alone, with no `account.can`. Refusing a renewal token here would break the commonest case: an expired access token is the normal reason to sign out, and the renewal token is the credential still alive. Revoking tokens can only affect the account presenting them.",
         "security": [
           {
             "bearerAuth": []
@@ -825,7 +829,7 @@
             "$ref": "#/components/responses/Unauthenticated"
           }
         },
-        "x-authorisation": "The token alone. Deliberately not `account.can`, which would refuse a renewal token \u2014 and an expired access token is the normal reason for signing out, so refusing the renewal token would leave a working one in storage that signs the person straight back in. Revoking tokens can only affect the account presenting them, so there is nothing for an account-type guard to protect."
+        "x-authorisation": "The token alone. Deliberately not `account.can`, which would refuse a renewal token — and an expired access token is the normal reason for signing out, so refusing the renewal token would leave a working one in storage that signs the person straight back in. Revoking tokens can only affect the account presenting them, so there is nothing for an account-type guard to protect."
       }
     },
     "/api/v1/identity/admins/session/renew": {
@@ -837,7 +841,7 @@
           "Administrator"
         ],
         "summary": "Renew the administrator session.",
-        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" \u2014 the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
+        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
         "security": [
           {
             "bearerAuth": []
@@ -871,7 +875,7 @@
           "Administrator"
         ],
         "summary": "Sign out of every administrator session.",
-        "description": "Revoke every token this account holds, in all four applications.\n\nAll of them, not the one presented, because a person who signs out of one application while signed in to another expects to be signed out of both \u2014 and a front end cannot reach into another application's memory to do it, so the guarantee has to be that the credential the other application holds stops being accepted.\n\nThe renewal tokens go too, which is what stops the sign-out being undone by a page load.\n\nThis route is guarded by the token alone, with no `account.can`. Refusing a renewal token here would break the commonest case: an expired access token is the normal reason to sign out, and the renewal token is the credential still alive. Revoking tokens can only affect the account presenting them.",
+        "description": "Revoke every token this account holds, in all four applications.\n\nAll of them, not the one presented, because a person who signs out of one application while signed in to another expects to be signed out of both — and a front end cannot reach into another application's memory to do it, so the guarantee has to be that the credential the other application holds stops being accepted.\n\nThe renewal tokens go too, which is what stops the sign-out being undone by a page load.\n\nThis route is guarded by the token alone, with no `account.can`. Refusing a renewal token here would break the commonest case: an expired access token is the normal reason to sign out, and the renewal token is the credential still alive. Revoking tokens can only affect the account presenting them.",
         "security": [
           {
             "bearerAuth": []
@@ -892,7 +896,7 @@
             "$ref": "#/components/responses/Unauthenticated"
           }
         },
-        "x-authorisation": "The token alone. Deliberately not `account.can`, which would refuse a renewal token \u2014 and an expired access token is the normal reason for signing out, so refusing the renewal token would leave a working one in storage that signs the person straight back in. Revoking tokens can only affect the account presenting them, so there is nothing for an account-type guard to protect."
+        "x-authorisation": "The token alone. Deliberately not `account.can`, which would refuse a renewal token — and an expired access token is the normal reason for signing out, so refusing the renewal token would leave a working one in storage that signs the person straight back in. Revoking tokens can only affect the account presenting them, so there is nothing for an account-type guard to protect."
       }
     },
     "/api/v1/identity/super-admins/session/renew": {
@@ -904,7 +908,7 @@
           "Super administrator"
         ],
         "summary": "Renew the super administrator session.",
-        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" \u2014 the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
+        "description": "Exchange a renewal token for a new access token and a new renewal token. The renewal token travels in the `Authorization` header, so there is no request body and no field in which a token could be logged.\n\nThe presented token is spent by this call. That is the design: a renewal token is held in browser storage, where injected script can read it, so it is worth one use and a short life. Presenting it twice is not \"slightly behind\" — the second attempt is a 401 and the session is over.\n\nA renewal token may call this route and nothing else. `account.can` refuses it everywhere else, and this route refuses an access token in return, so neither credential can be used as the other.",
         "security": [
           {
             "bearerAuth": []
@@ -938,7 +942,7 @@
           "Super administrator"
         ],
         "summary": "Sign out of every super administrator session.",
-        "description": "Revoke every token this account holds, in all four applications.\n\nAll of them, not the one presented, because a person who signs out of one application while signed in to another expects to be signed out of both \u2014 and a front end cannot reach into another application's memory to do it, so the guarantee has to be that the credential the other application holds stops being accepted.\n\nThe renewal tokens go too, which is what stops the sign-out being undone by a page load.\n\nThis route is guarded by the token alone, with no `account.can`. Refusing a renewal token here would break the commonest case: an expired access token is the normal reason to sign out, and the renewal token is the credential still alive. Revoking tokens can only affect the account presenting them.",
+        "description": "Revoke every token this account holds, in all four applications.\n\nAll of them, not the one presented, because a person who signs out of one application while signed in to another expects to be signed out of both — and a front end cannot reach into another application's memory to do it, so the guarantee has to be that the credential the other application holds stops being accepted.\n\nThe renewal tokens go too, which is what stops the sign-out being undone by a page load.\n\nThis route is guarded by the token alone, with no `account.can`. Refusing a renewal token here would break the commonest case: an expired access token is the normal reason to sign out, and the renewal token is the credential still alive. Revoking tokens can only affect the account presenting them.",
         "security": [
           {
             "bearerAuth": []
@@ -959,7 +963,7 @@
             "$ref": "#/components/responses/Unauthenticated"
           }
         },
-        "x-authorisation": "The token alone. Deliberately not `account.can`, which would refuse a renewal token \u2014 and an expired access token is the normal reason for signing out, so refusing the renewal token would leave a working one in storage that signs the person straight back in. Revoking tokens can only affect the account presenting them, so there is nothing for an account-type guard to protect."
+        "x-authorisation": "The token alone. Deliberately not `account.can`, which would refuse a renewal token — and an expired access token is the normal reason for signing out, so refusing the renewal token would leave a working one in storage that signs the person straight back in. Revoking tokens can only affect the account presenting them, so there is nothing for an account-type guard to protect."
       }
     },
     "/api/v1/identity/accounts": {
@@ -1008,7 +1012,7 @@
           "Accounts"
         ],
         "summary": "Suspend one administrator, keeping the record.",
-        "description": "Takes no request body. The only question is whether, and the path already answers it; a body would be somewhere for a caller to put a status of their own choosing, and the back end would ignore it.\n\nThe status is set to `suspended` and nothing else changes: the name, the address and the password hash are copied through, so restoring the account is a status change back rather than an invitation. There is no delete route on this surface at all \u2014 an account that can be removed is an account whose history can be removed with it.\n\n**No tokens are revoked, and none need to be.** Both authorisation middlewares re-read the account's status on every request, so changing it closes the access door and the renewal door on the very next request, with no window in which a suspended person keeps working by never reloading. Revoking here as well would be a second copy of that guarantee in a place that does not run on the read path.",
+        "description": "Takes no request body. The only question is whether, and the path already answers it; a body would be somewhere for a caller to put a status of their own choosing, and the back end would ignore it.\n\nThe status is set to `suspended` and nothing else changes: the name, the address and the password hash are copied through, so restoring the account is a status change back rather than an invitation. There is no delete route on this surface at all — an account that can be removed is an account whose history can be removed with it.\n\n**No tokens are revoked, and none need to be.** Both authorisation middlewares re-read the account's status on every request, so changing it closes the access door and the renewal door on the very next request, with no window in which a suspended person keeps working by never reloading. Revoking here as well would be a second copy of that guarantee in a place that does not run on the read path.",
         "security": [
           {
             "bearerAuth": []
@@ -1063,7 +1067,7 @@
           "Accounts"
         ],
         "summary": "Promote one administrator to super administrator.",
-        "description": "Takes no request body. The only question is whether, and the path already answers it; a body would be somewhere for a caller to put a status of their own choosing, and the back end would ignore it.\n\nA record is **created**, not a flag set. Super administrators live in their own table, so promotion inserts a `super_admins` row carrying the same identity and the same password hash \u2014 which is what keeps the most powerful account type a small countable set instead of a boolean on a table anybody with `accounts:read` can read.\n\nThe administrator record is then **suspended, not deleted**. Access moved between the two tables, and the record of what that person did while they were an administrator has to outlive their promotion.\n\n`warning` is null while the role is narrow and carries a sentence once it is not. The threshold belongs to the back end and so does the wording; a front end that re-derived the count from the sentence would be a second threshold in a second language.",
+        "description": "Takes no request body. The only question is whether, and the path already answers it; a body would be somewhere for a caller to put a status of their own choosing, and the back end would ignore it.\n\nA record is **created**, not a flag set. Super administrators live in their own table, so promotion inserts a `super_admins` row carrying the same identity and the same password hash — which is what keeps the most powerful account type a small countable set instead of a boolean on a table anybody with `accounts:read` can read.\n\nThe administrator record is then **suspended, not deleted**. Access moved between the two tables, and the record of what that person did while they were an administrator has to outlive their promotion.\n\n`warning` is null while the role is narrow and carries a sentence once it is not. The threshold belongs to the back end and so does the wording; a front end that re-derived the count from the sentence would be a second threshold in a second language.",
         "security": [
           {
             "bearerAuth": []
@@ -1299,6 +1303,30 @@
           }
         }
       }
+    },
+    "/api/products": {
+      "get": {
+        "operationId": "listProducts",
+        "x-laravel-route": "products.index",
+        "tags": [
+          "Catalog"
+        ],
+        "summary": "Every product in the catalogue.",
+        "description": "No credential is required, and none is expected. This is the one endpoint on the API a caller can reach without signing in.\n\n`data` is always an array. A catalogue with nothing in it is a `200` with `{\"data\": []}` - not a 404, and not `null` - so a client renders a list in both cases and never has to treat \"no products\" as a failure. There is no pagination envelope: `data` is the only key in the response.\n\n`price` is a JSON number and not a string. It is stored as a fixed-scale decimal of two places and is rendered here as a bare number: no currency symbol, no thousands separator, and no guarantee of a trailing zero. A price of `5.00` is returned as `5` and a price of `124.50` as `124.5`. Both are the same JSON number and the same JavaScript value - JSON has no distinction between `5` and `5.0` - so format the value to two places for display rather than counting the places in the payload.\n\nField names are exactly `id`, `name` and `price`.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The catalogue. An empty catalogue is also a 200, with an empty `data` array.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1321,7 +1349,7 @@
         }
       },
       "ValidationFailure": {
-        "description": "The request was refused.\n\nOn a sign-in door this is also the answer for an unknown address, a wrong password and an account that cannot be used \u2014 all three are refused identically, under `errors.credentials`, and nothing in the response tells them apart.",
+        "description": "The request was refused.\n\nOn a sign-in door this is also the answer for an unknown address, a wrong password and an account that cannot be used — all three are refused identically, under `errors.credentials`, and nothing in the response tells them apart.",
         "content": {
           "application/json": {
             "schema": {
@@ -1366,7 +1394,7 @@
         }
       },
       "Unauthenticated": {
-        "description": "No usable token was presented. Carries a message and nothing else \u2014 in particular no stack trace, which a debug-mode exception would otherwise have appended to every refusal on this API.",
+        "description": "No usable token was presented. Carries a message and nothing else — in particular no stack trace, which a debug-mode exception would otherwise have appended to every refusal on this API.",
         "content": {
           "application/json": {
             "schema": {
@@ -1386,7 +1414,7 @@
         }
       },
       "NotFound": {
-        "description": "The record does not exist \u2014 answered only to a caller that was permitted to ask, so a 404 here is never a way of learning that a record exists and is merely hidden from you.",
+        "description": "The record does not exist — answered only to a caller that was permitted to ask, so a 404 here is never a way of learning that a record exists and is merely hidden from you.",
         "content": {
           "application/json": {
             "schema": {
@@ -1415,7 +1443,7 @@
         }
       },
       "Conflict": {
-        "description": "The caller is permitted to do this, and the request conflicts with something else. Three situations answer here and they are deliberately not 403s, because a 403 would be a false statement about why the caller was stopped: they hold the ability and passed every guard.\n\n* Promoting or suspending the account you are signed in with. Promotion creates a *second* record, so self-promotion would leave one person holding two super administrator accounts with two token sets \u2014 and a suspension could not close both.\n* Promoting somebody whose address already has a super administrator account. The unique index would refuse the insert anyway; left as a 500 it would tell the person driving the interface that the platform is broken rather than that the account is in an unusual state.",
+        "description": "The caller is permitted to do this, and the request conflicts with something else. Three situations answer here and they are deliberately not 403s, because a 403 would be a false statement about why the caller was stopped: they hold the ability and passed every guard.\n\n* Promoting or suspending the account you are signed in with. Promotion creates a *second* record, so self-promotion would leave one person holding two super administrator accounts with two token sets — and a suspension could not close both.\n* Promoting somebody whose address already has a super administrator account. The unique index would refuse the insert anyway; left as a 500 it would tell the person driving the interface that the platform is broken rather than that the account is in an unusual state.",
         "content": {
           "application/json": {
             "schema": {
@@ -1649,7 +1677,7 @@
         "items": {
           "type": "string"
         },
-        "description": "The token's own claim list, echoed back. Read it to decide what to offer before calling anything \u2014 but the back end re-checks it on every request, so hiding a button is a convenience and not the protection. `*` is the wildcard carried by a super administrator's token; `accounts:read`, `accounts:suspend` and `accounts:promote` are the named ones."
+        "description": "The token's own claim list, echoed back. Read it to decide what to offer before calling anything — but the back end re-checks it on every request, so hiding a button is a convenience and not the protection. `*` is the wildcard carried by a super administrator's token; `accounts:read`, `accounts:suspend` and `accounts:promote` are the named ones."
       },
       "CurrentAccountResponse": {
         "type": "object",
@@ -1707,7 +1735,7 @@
               "admins",
               "super_admins"
             ],
-            "description": "The account type, as the same value the sign-in path and the token abilities use. Present on every row so the directory is self-describing: it mixes four account types and a row is otherwise uninterpretable. Identifiers are only meaningful together with this \u2014 an id from one table says nothing about another."
+            "description": "The account type, as the same value the sign-in path and the token abilities use. Present on every row so the directory is self-describing: it mixes four account types and a row is otherwise uninterpretable. Identifiers are only meaningful together with this — an id from one table says nothing about another."
           },
           "id": {
             "type": "integer"
@@ -1750,7 +1778,7 @@
           },
           "errors": {
             "type": "object",
-            "description": "Per-field messages, present on a 422 and absent otherwise. The keys are `credentials` on a sign-in refusal, `password_reset` for a spent or expired link, and the field's own name otherwise \u2014 the same keys the back end's feature tests assert.",
+            "description": "Per-field messages, present on a 422 and absent otherwise. The keys are `credentials` on a sign-in refusal, `password_reset` for a spent or expired link, and the field's own name otherwise — the same keys the back end's feature tests assert.",
             "additionalProperties": {
               "type": "array",
               "items": {
@@ -1869,7 +1897,7 @@
               "warning": {
                 "type": "string",
                 "nullable": true,
-                "description": "Present and null when the super administrator role is still narrow. A sentence when it is not, describing the role as it is now rather than as it will be \u2014 a fact the reader can check rather than a prediction they have to trust."
+                "description": "Present and null when the super administrator role is still narrow. A sentence when it is not, describing the role as it is now rather than as it will be — a fact the reader can check rather than a prediction they have to trust."
               }
             }
           }
@@ -1888,7 +1916,48 @@
           },
           "password": {
             "type": "string",
-            "description": "The new password. Must satisfy the same policy as the reset flow, and must not be the current password \u2014 otherwise \"you must change your password\" could be satisfied by submitting the shared one again, and the flag cleared with nothing changed."
+            "description": "The new password. Must satisfy the same policy as the reset flow, and must not be the current password — otherwise \"you must change your password\" could be satisfied by submitting the shared one again, and the flag cleared with nothing changed."
+          }
+        }
+      },
+      "ProductListResponse": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "description": "Every product, ordered by identifier. An empty catalogue is an empty array, never a null and never an absent key.",
+            "items": {
+              "$ref": "#/components/schemas/Product"
+            }
+          }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "price"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The product identifier. A JSON integer, and stable for the life of the product."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The product name. Never empty: an unnamed product is not a state this API can return."
+          },
+          "price": {
+            "type": "number",
+            "format": "double",
+            "multipleOf": 0.01,
+            "description": "The price as a bare JSON number. **A number, not a string** - it is rendered here as `19.99` and not `\"19.99\"`, because the front end formats this value directly and will not coerce a string first.\n\nThe stored value is a decimal(10,2), so it always has two decimal places internally, but JSON does not carry that: a price of `5.00` is returned as `5` and `124.50` as `124.5`. These are the same JSON number and the same JavaScript value. Format to two places for display; do not read the number of places off the payload."
           }
         }
       }
