@@ -582,5 +582,263 @@ env_repo="$(grep -E "^[[:space:]]*APP_IMAGE[[:space:]]*=" "${REPO_ROOT}/deploy/e
     || bad "the repository path" "'$env_repo' in env.example" "'$jenkins_repo' in the Jenkinsfile"
 
 # ---------------------------------------------------------------------------
+group 'nothing interpolates a variable it does not define'
+
+# Two ways a variable can be referenced and never arrive, and both were live
+# defects until this group existed. Neither shows up as a build failure, so
+# nothing caught them.
+#
+#   1. MAIL_FROM_NAME="${APP_NAME}" in deploy/env.example, with APP_NAME
+#      nowhere in that file. Compose interpolates it - it does NOT pass the
+#      literal `${APP_NAME}` through - so the container received an EMPTY string
+#      and every password-reset email went out with a blank From name. The
+#      compose run also warned on every invocation, which is the only warning
+#      this stack ever emitted and so read as noise.
+#
+#   2. `--build-arg "APP_NAME=fixmate"` in the Jenkinsfile, against a Dockerfile
+#      that has never declared `ARG APP_NAME`. Docker warns that the build-arg
+#      was not consumed and the value goes nowhere. A build arg for an
+#      undeclared ARG is inert, not an error, so the pipeline stayed green.
+#
+# Both are the same mistake - a reference with no definition - and the reason
+# they survived is the same: nothing in either file is executed in a way that
+# fails.
+#
+# Every loop below reads its list one line at a time with `read`, and every one of
+# them strips comments first. Both are load-bearing, and both were wrong in the
+# first version of this group.
+#
+#   * `read`, not `for x in $(...)`. A reference is not a bare word:
+#     ${APP_URL:?set APP_URL in .env} contains spaces inside its own error
+#     message, and word splitting tore it into four tokens - the whole
+#     reference, the bare name, the word `in`, and `.env` - two of which the
+#     check then reported as undefined variables that exist nowhere. `read` puts
+#     back what word splitting destroys. The here-string also appends the
+#     trailing newline `read` needs, which is the same normalisation
+#     deploy/status.sh applies to the release record so its final line is not
+#     silently skipped.
+#
+#   * `read` in a here-string, not a pipeline. A pipeline runs the loop in a
+#     subshell, so the pass and fail counters would be incremented where nothing
+#     can see them, and every test would report as passing while the total stayed
+#     at zero.
+#
+# Comment stripping is there because the Jenkinsfile paragraph about the back-end
+# build says "No --build-arg for APP_NAME" and "the build-arg was not consumed",
+# in order to explain this very change. The extraction read its own
+# documentation, found `--build-arg for`, and reported a missing ARG named `for`.
+# This is the second time in this repository that a check has read its own prose
+# as configuration - FrontEndApplicationsTest matched the docblock of the file it
+# was checking, because that docblock names the constructs the rule forbids. A
+# test that fails on correct code gets its comments stripped, never its prose
+# reworded.
+
+# The variables a `.env` file interpolates, deduplicated, `${}` removed.
+#
+# Only whole-line comments are stripped, which is enough: the prose naming
+# ${APP_IMAGE} and ${DB_*} in deploy/env.example is on its own line, and a `#`
+# anywhere else in that file begins a definition.
+env_refs() {
+    sed -e 's/^[[:space:]]*#.*//' "$1" \
+        | grep -oE '[$][{][A-Za-z_][A-Za-z0-9_]*[}]' \
+        | tr -d '${}' \
+        | sort -u \
+        || true
+}
+
+for spec in "deploy/env.example" ".env.example"; do
+    path="${REPO_ROOT}/${spec}"
+    [ -f "$path" ] || { bad "${spec} exists" "the file" "missing"; continue; }
+
+    refs="$(env_refs "$path")"
+    count="$(printf '%s' "$refs" | grep -c . || true)"
+
+    # Reported rather than asserted: a file that interpolates nothing has no
+    # bug of this kind, and failing on it would punish a fix for removing the
+    # reference entirely.
+    ok "${spec} interpolates ${count} variable(s)"
+
+    while IFS= read -r var; do
+        [ -n "$var" ] || continue
+        if grep -qE "^[[:space:]]*${var}[[:space:]]*=" "$path"; then
+            ok "${spec} defines \${${var}}"
+        else
+            bad "${spec} defines \${${var}}" "a ${var}= line in ${spec}" \
+                "referenced but never defined, so Compose interpolates it to an empty string"
+        fi
+    done <<< "$refs"
+done
+
+# The other direction, which is the same class and the same severity: every
+# variable docker-compose.prod.yml REQUIRES has to be defined in
+# deploy/env.example, because that file is the only thing on the VPS that can
+# supply one. A required variable with no definition aborts the deploy before a
+# single image is pulled, which is at least loud - the cost of finding out is a
+# deploy that has to be undone by hand.
+#
+# The three shapes are not interchangeable, and conflating them was the first
+# version's mistake:
+#
+#   ${NAME}          required, and Compose's own error is good enough.
+#   ${NAME:-value}   optional with a fallback (REDIS_MAXMEMORY, the four ports).
+#                    Deliberately exempt: the fallback IS the definition.
+#   ${NAME:?message} required, with a better error than Compose's own
+#                    (APP_IMAGE). The message is not a default - an unset value
+#                    still aborts - so it is not exempt, and still has to be
+#                    defined.
+#
+# Treating `:?` as a default exempts all fifteen references in this file, and a
+# check that passes on every input is not a check. The first version did exactly
+# that, and reported fifteen reassuring lines while asserting nothing at all.
+#
+# Comments are stripped for the same reason as above, and here trailing comments
+# are stripped too. Safe because no `#` in this file appears inside a quoted
+# value - checked, not assumed, and worth rechecking if a quoted value is added.
+#
+# The extraction reduces each reference to two bare tokens - the name and one of
+# `none`, `required` or `optional` - so an error message can never reach the loop
+# and be split on its spaces. Bracket classes rather than backslashes around the
+# braces, because in a BRE a backslash-brace opens an interval and
+# backslash-brace-close is a literal.
+compose_refs="$(sed -e 's/^[[:space:]]*#.*//' -e 's/[[:space:]]#.*//' \
+    "${REPO_ROOT}/docker-compose.prod.yml" \
+    | grep -oE '[$][{][A-Za-z_][A-Za-z0-9_]*(:[-?][^}]*)?[}]' \
+    | sed -e 's/^[$][{]\([A-Za-z_][A-Za-z0-9_]*\):-.*$/\1 optional/' \
+          -e 's/^[$][{]\([A-Za-z_][A-Za-z0-9_]*\):?.*$/\1 required/' \
+          -e 's/^[$][{]\([A-Za-z_][A-Za-z0-9_]*\)[}]$/\1 none/' \
+    | sort -u \
+    || true)"
+
+while IFS=' ' read -r name kind; do
+    [ -n "$name" ] || continue
+
+    case "$kind" in
+        optional)
+            ok "docker-compose.prod.yml \${${name}} is optional and carries its own fallback"
+            ;;
+        required|none)
+            if grep -qE "^[[:space:]]*${name}[[:space:]]*=" "${REPO_ROOT}/deploy/env.example"; then
+                ok "docker-compose.prod.yml \${${name}} is ${kind} and defined in deploy/env.example"
+            else
+                bad "docker-compose.prod.yml \${${name}} is ${kind}" \
+                    "a ${name}= line in deploy/env.example" \
+                    "the compose file requires it, the VPS supplies values, and neither defines it"
+            fi
+            ;;
+        *)
+            bad "docker-compose.prod.yml \${${name}}" "one of none/required/optional" \
+                "extracted as '${name} ${kind}', which is not a shape the check understands"
+            ;;
+    esac
+done <<< "$compose_refs"
+
+# And the pipeline's build arguments, which have to be declared by a Dockerfile
+# or Docker discards them.
+#
+# This asserts the name is declared SOMEWHERE, not in the Dockerfile the
+# argument is actually passed to - it does not follow the build invocations
+# through the file to work out which is which. That is a real limit and it is
+# weaker than the check above, but it is the defect that occurred: an argument
+# declared in no Dockerfile at all. A name declared in the wrong one still
+# passes here and still wastes the value, so treat a new --build-arg in the
+# Jenkinsfile as needing a Docker ARG read by eye.
+build_args="$(sed -e 's/^[[:space:]]*#.*//' "${REPO_ROOT}/Jenkinsfile" \
+    | grep -oE '\-\-build-arg[[:space:]]+"?[A-Za-z_][A-Za-z0-9_]*' \
+    | sed -e 's/^--build-arg[[:space:]]*//' -e 's/"//g' \
+    | sort -u \
+    || true)"
+
+while IFS= read -r var; do
+    [ -n "$var" ] || continue
+    declared_in=""
+    for df in "${REPO_ROOT}/Dockerfile" "${REPO_ROOT}"/apps/*/Dockerfile; do
+        [ -f "$df" ] || continue
+        if grep -qE "^[[:space:]]*ARG[[:space:]]+${var}(=|[[:space:]]|$)" "$df"; then
+            declared_in="${declared_in} ${df#"${REPO_ROOT}"/}"
+        fi
+    done
+
+    if [ -n "$declared_in" ]; then
+        ok "--build-arg ${var} is declared as ARG in${declared_in}"
+    else
+        bad "--build-arg ${var}" "ARG ${var} in a Dockerfile" \
+            "declared in no Dockerfile, so Docker discards it and the pipeline stays green"
+    fi
+done <<< "$build_args"
+
+# ---------------------------------------------------------------------------
+group 'the deploy path never builds an image locally'
+
+# The four front-end services in docker-compose.prod.yml carry a `build:` block
+# as well as an `image:` reference, so a checkout can reproduce them with
+# `docker compose build`. That makes a locally built image *possible* on the host
+# that deploys, and the two ways Compose can be talked into producing one are
+# worth naming because both readings of `pull_policy: always` are wrong.
+#
+# Measured, with a deliberately unreachable registry and a one-line Dockerfile:
+#
+#   * `up --build` ignores `pull_policy` completely and always builds. It
+#     printed "Building" without attempting a pull at all.
+#
+#   * Plain `up` pulls first and, if the pull does not yield an image, SILENTLY
+#     falls back to building from whatever is in the context directory. It
+#     printed "Pulling", failed, and then printed "Building".
+#
+# So `pull_policy: always` is not "fail when the image is not in the registry".
+# On a host that has a source checkout and a registry it cannot reach - an
+# expired or mistyped token, say - `up -d` would run an image nobody pushed,
+# built for that machine, and say nothing. On the VPS itself it would fail,
+# because there is no checkout there, but it would fail confusingly.
+#
+# What keeps a release immutable is therefore this script and not the compose
+# file, and it is two properties rather than one. Both are asserted below, and
+# both became load-bearing when the `build` blocks were added - before that, a
+# stray `--build` would have been harmless, because there was nothing to build
+# from on the host.
+#
+# Strip comments before matching, for the reason the group above documents: this
+# file's own prose now contains the phrase `--build`, and the Jenkinsfile's
+# contains `--build-arg`. Matching the unstripped text would find this sentence
+# in deploy.sh's own sibling and report a violation that does not exist.
+
+deploy_compose_calls() {
+    sed -e 's/^[[:space:]]*#.*//' "${REPO_ROOT}/deploy/deploy.sh" \
+        | grep -nE 'compose [a-z-]*(up|pull|build|run)' \
+        || true
+}
+
+calls="$(deploy_compose_calls)"
+[ -n "$calls" ] || bad "deploy.sh invokes compose" "a compose call" "none found, so the parse found nothing and these checks assert nothing"
+
+pull_line="$(printf '%s\n' "$calls" | grep -E 'compose pull' | head -1 | cut -d: -f1 || true)"
+up_line="$(printf '%s\n' "$calls" | grep -E 'compose up' | head -1 | cut -d: -f1 || true)"
+
+if [ -n "$pull_line" ] && [ -n "$up_line" ] && [ "$pull_line" -lt "$up_line" ]; then
+    ok "deploy.sh pulls (line ${pull_line}) before it brings the set up (line ${up_line})"
+else
+    bad "deploy.sh pulls before it ups" "a 'compose pull' before a 'compose up'" \
+        "without an explicit pull first, 'up' falls back to building from source when the registry cannot be reached, and a release would run an image nobody pushed"
+fi
+
+if printf '%s\n' "$calls" | grep -qE 'compose build|up[^|;&]*--build'; then
+    bad "deploy.sh never asks compose to build" "no --build and no 'compose build'" \
+        "'--build' overrides 'pull_policy' entirely, so the release would be built on the host instead of pulled from the registry"
+else
+    ok "deploy.sh never asks compose to build anything"
+fi
+
+# The half of the pair that is easy to lose in a reordering: `up` falling back
+# to a build is only harmless while the pull has already succeeded, so the
+# failure has to be fatal rather than tolerated. `if ! compose pull` rolls back
+# and dies; a bare `compose pull || true` would let the deploy continue into
+# exactly the silent local build this group exists to prevent.
+if grep -qE '^[[:space:]]*if ! compose pull' "${REPO_ROOT}/deploy/deploy.sh"; then
+    ok "a failed pull stops the deploy rather than being tolerated"
+else
+    bad "a failed pull is fatal" "'if ! compose pull'" \
+        "a tolerated pull failure lets the deploy continue into the silent local build this group exists to prevent"
+fi
+
+# ---------------------------------------------------------------------------
 printf '\n\033[1m%d passed, %d failed\033[0m\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

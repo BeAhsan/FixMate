@@ -31,7 +31,7 @@ web server, the queue worker and the scheduler always run identical code.
 | --- | --- |
 | `Dockerfile` | 4 stages: `vendor` → `runtime` → `test` → `production`. `docker build .` builds the last one, which is the deployable image. |
 | `docker/` | nginx, PHP-FPM, OPcache, supervisor and the container entrypoint. |
-| `docker-compose.yml` | Local dev. Source is bind-mounted, so PHP edits are live. |
+| `docker-compose.yml` | Local dev. Source is bind-mounted, so PHP edits are live. Runs the back end and the four front ends, each built from its own `apps/<name>/Dockerfile`. |
 | `docker-compose.prod.yml` | Production. No source on disk, no bind mounts, images pulled from the registry. Runs the back end and the four front ends. |
 | `Jenkinsfile` | The pipeline. |
 | `deploy/deploy.sh` | Runs **on the VPS**. Pull all five images, migrate, swap, health-check each, roll back. |
@@ -64,20 +64,27 @@ tokens*, granting `Packages: Read and write`.
 ```sh
 composer install
 cp .env.example .env && php artisan key:generate
+php artisan api-client:generate
 
 docker compose up -d --build
 docker compose exec app php artisan migrate
 ```
 
 The API is on <http://localhost:8000>, MySQL on `127.0.0.1:3306` and Redis on
-`127.0.0.1:6379`. `GET /up` is the health check.
+`127.0.0.1:6379`. `GET /up` is the health check. The four front ends are on
+<http://localhost:3000> (user), `:3001` (worker), `:3002` (admin) and `:3003`
+(super admin).
 
 Notes:
 
+- `php artisan api-client:generate` is needed before the first `up --build`:
+  `packages/api-client/src/generated` is derived from `routes/api.php`, is not
+  committed, and every front-end build compiles it. It is one command and
+  changes nothing else, so running it is never wrong.
 - The bind mount shadows the image's `vendor/`, so `composer install` must be
   run on the host. The API image compiles no front end, so it has no
-  `npm run build` step — the front-end applications build separately, each into
-  its own image.
+  `npm run build` step — each front-end application builds into its own image,
+  in development as well as in production.
 - Config is not cached in development, so `.env` and `config/` changes apply on
   the next request.
 

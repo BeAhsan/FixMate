@@ -281,12 +281,38 @@ Run `composer install` **on the host** before `docker compose up -d --build`.
 The dev bind mount (`.:/var/www/html`) shadows the image's `vendor/`, so
 anything installed inside the container is invisible to the app.
 
+There is a **second** host-side prerequisite, added with the four front-end
+services, and it is not obvious because the failure names nothing useful:
+
 ```sh
 composer install
 cp .env.example .env && php artisan key:generate
+php artisan api-client:generate          # for the four front-end images
 docker compose up -d --build
 docker compose exec app php artisan migrate
 ```
+
+- **`php artisan api-client:generate` is required before the first
+  `up --build`**, because `packages/api-client/src/generated` is not committed
+  and every front-end build compiles it. Without it the four builds fail with a
+  module-resolution error from inside the export that does not mention the real
+  cause. The command produces nothing else, so running it is never wrong, and
+  after the first run the directory is cached.
+- **The four front ends are in `docker-compose.yml` too**, each with a `build:`
+  pointing at its own `apps/<name>/Dockerfile` and publishing
+  `localhost:3000`–`:3003`. That is the same shape `docker-compose.prod.yml`
+  uses, so an application is its own image in development and not only in
+  production. `FrontEndComposeServicesTest` is what keeps the three lists —
+  `config/applications.php`, and the `-app` services in each compose file — in
+  step, including that each published port is the port
+  `config/applications.php` grants that application.
+- **There is no `pull_policy` on the dev front ends, deliberately.** Production
+  sets `always`, which is right there and wrong here: Compose would pull
+  `fixmate/user-app:dev` rather than build it and fail with `pull access
+  denied`, which reads like a credentials problem.
+- **The four ports are fixed by the back end, not by convenience.** Moving one
+  to dodge a local conflict does not "just work locally" — CORS refuses the
+  browser, and the symptom is a sign-in that fails with nothing to show for it.
 
 Config is **not** cached in development, so `.env` and `config/` edits apply on
 the next request. In production `php artisan config:cache` runs in
@@ -828,6 +854,45 @@ never enter an image layer.
   'no views' situation into a `TypeError` wherever `view` is resolved — which
   includes `laravel/mcp` calling `loadViewsFrom`. Deleting them buys nothing;
   the `resources/` directory is already gone, so no view can be found anyway.
+
+- **`docker-compose.prod.yml` gives the four front ends a `build:` block as well
+  as an `image:`, and that makes the deploy path load-bearing.** The `build:`
+  exists so a checkout can reproduce an image with `docker compose build` and so
+  the Dockerfile each service names is visible in the file that deploys it. It
+  opens a hole, and both obvious readings of `pull_policy: always` are wrong:
+  - **`up --build` ignores `pull_policy` entirely** and always builds locally.
+    Verified with an unreachable registry — it printed `Building` without
+    attempting a pull.
+  - **Plain `up` pulls, and if the pull does not yield an image it silently
+    falls back to building** from whatever is in the context directory. Verified
+    the same way: it printed `Pulling`, failed, then printed `Building`. So
+    `pull_policy: always` does not mean "fail when the image is not in the
+    registry". A host with a checkout and an expired token would run an image
+    nobody pushed, and say nothing; the VPS, which has no checkout, fails
+    confusingly instead.
+  - So immutability rests on `deploy/deploy.sh`: it runs `pull` first, treats a
+    failure as fatal, and never passes `--build`. All three are asserted in
+    `deploy/test-deploy.sh` — **that group exists because adding the `build`
+    blocks made those properties matter.** Before the blocks were added, a stray
+    `--build` was harmless, because there was nothing to build from on the host.
+  - **Do not run `up -d` on a fresh host expecting it to stop at a missing
+    image.** Use the deploy script. The header of the prod file still shows
+    `docker compose -f docker-compose.prod.yml up -d`, which is the right command
+    for a host that already holds all five images and the wrong one for a fresh
+    one.
+- **`NEXT_PUBLIC_API_URL` is required (`:?`) in prod and defaulted (`:-`) in
+  dev, and that asymmetry is deliberate.** It is inlined into the export at build
+  time with no runtime override, so in production a fallback bakes an address
+  into an image, the build succeeds, and every request from that front end fails
+  in the browser — from a healthy container serving a correct export, against an
+  API that is up. Dev defaults to `localhost:8000` because that is the address
+  its own stack publishes the API on; the argument does not transfer to a
+  deployment whose API address is not knowable from here.
+  `FrontEndComposeServicesTest` asserts the prod form is `:?`.
+- **The app, queue and scheduler have no `build:` block in the prod file**, only
+  the four front ends. They share the root `Dockerfile` and one image reference,
+  so a `build:` would belong on `x-app-image` and all three would inherit it.
+  Deliberately left alone, since nothing in the deploy path needs it.
 
 ## Agent skills
 

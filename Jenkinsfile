@@ -286,10 +286,20 @@ pipeline {
                         # The back end first, from the repository root Dockerfile.
                         # buildx (docker-container driver) is required to emit a
                         # platform other than this host's own.
+                        #
+                        # No --build-arg for APP_NAME. It was here until this
+                        # commit and the root Dockerfile has never declared
+                        # `ARG APP_NAME`, so Docker warned that the build-arg was
+                        # not consumed and the value went nowhere. It is also the
+                        # wrong place for it: the image is immutable and takes its
+                        # runtime configuration from the VPS .env through
+                        # `env_file`, so a name baked in at build time is not
+                        # visible to the running app. APP_NAME now comes from
+                        # deploy/env.example, and the deploy test suite asserts
+                        # every ${...} that file interpolates is defined there.
                         echo "==> Building $IMAGE"
                         docker buildx build \
                             --platform "$PLATFORM" \
-                            --build-arg "APP_NAME=fixmate" \
                             --tag "$IMAGE" \
                             $(latest_tag_for "$IMAGE_NAME") \
                             --push \

@@ -6,6 +6,20 @@
 #
 #   docker compose -f docker-compose.prod.yml up -d
 #
+# Use that only on a host that ALREADY holds all five images, and never with
+# `--build`. A first deployment, and every subsequent release, goes through
+# `deploy/deploy.sh`, which pulls the set, migrates with the new app image while
+# the old containers still serve, swaps, health-checks each component, and rolls
+# back on any failure.
+#
+# The reason is not preference. The four front-end services below carry a
+# `build:` block, and with one present `up` falls back to building from the
+# context directory if the registry cannot be reached — silently, after a failed
+# pull. The VPS has no source checkout, so that fallback fails confusingly
+# rather than dangerously, but a host that does have one would run an image
+# nobody pushed. `deploy.sh` pulls first, treats a pull failure as fatal, and
+# never passes `--build`; all three are asserted in `deploy/test-deploy.sh`.
+#
 # MySQL and Redis publish no ports. The app publishes one, and each of the four
 # front ends publishes one of its own.
 #
@@ -205,28 +219,85 @@ services:
   # allowed-origins list gets these addresses from. The two lists must agree:
   # a front end on an address the back end does not grant is a browser whose
   # every request is refused by CORS.
+  #
+  # Each service carries TWO references to the same image, and they do different
+  # jobs. `image` is the registry reference the deploy path pulls, and it is what
+  # runs on the VPS — the Jenkins pipeline built and pushed that exact reference
+  # under the release tag. `build` records how to reproduce the image from this
+  # repository, so `docker compose build user-app` works from a checkout and the
+  # Dockerfile each service names is visible in the file that deploys it.
+  #
+  # `build` is here for REPRODUCIBILITY, and the interaction below is measured
+  # rather than assumed, because it is a sharp edge and the two obvious readings
+  # of it are both wrong:
+  #
+  #   * `up --build` ignores `pull_policy` completely and always builds locally.
+  #     On the VPS there is no source checkout, so it fails — but on a machine
+  #     that has one it produces an image nobody ever pushed.
+  #
+  #   * Plain `up` honours `pull_policy: always` only up to a point: it pulls
+  #     first and, IF THE PULL DOES NOT YIELD AN IMAGE, silently falls back to
+  #     building from whatever is in the context directory. Verified with a
+  #     deliberately unreachable registry, which printed "Pulling", failed, and
+  #     then printed "Building". A reachable-registry host with a checkout and an
+  #     expired or mistyped token would therefore run a locally built image
+  #     without saying so.
+  #
+  # So the immutability of a release rests on the deploy path, not on this file:
+  # `deploy.sh` runs `pull` first and fails the deploy if the pull does not
+  # succeed, and it never passes `--build`. Both halves of that are asserted in
+  # `deploy/test-deploy.sh`, because adding the `build` blocks below is what
+  # made them load-bearing. Do not run `up -d` on a fresh host expecting it to
+  # stop at a missing image; use the deploy script.
+  #
+  # NEXT_PUBLIC_API_URL is inlined into the export at build time and has no
+  # runtime override, so it is required here rather than given a fallback. A
+  # default would be worse than a missing value in production: it would bake an
+  # address into an image, the build would succeed, and every request from that
+  # front end would fail in the browser. The Jenkins pipeline passes the same
+  # variable when it builds these four.
 
   user-app:
     <<: *front-end
     image: ${USER_APP_IMAGE:?set USER_APP_IMAGE in .env}
+    build:
+      context: .
+      dockerfile: apps/user/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL in .env}
     ports:
       - "${USER_APP_PORT:-3000}:80"
 
   worker-app:
     <<: *front-end
     image: ${WORKER_APP_IMAGE:?set WORKER_APP_IMAGE in .env}
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL in .env}
     ports:
       - "${WORKER_APP_PORT:-3001}:80"
 
   admin-app:
     <<: *front-end
     image: ${ADMIN_APP_IMAGE:?set ADMIN_APP_IMAGE in .env}
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL in .env}
     ports:
       - "${ADMIN_APP_PORT:-3002}:80"
 
   super-admin-app:
     <<: *front-end
     image: ${SUPER_ADMIN_APP_IMAGE:?set SUPER_ADMIN_APP_IMAGE in .env}
+    build:
+      context: .
+      dockerfile: apps/super-admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL in .env}
     ports:
       - "${SUPER_ADMIN_APP_PORT:-3003}:80"
 

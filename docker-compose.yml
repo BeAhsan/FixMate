@@ -1,5 +1,6 @@
 # Local development stack.
 #
+#   php artisan api-client:generate   # once, see below
 #   docker compose up -d --build
 #
 # Source is bind-mounted, so PHP edits are picked up immediately. One host-side
@@ -7,9 +8,41 @@
 #
 #   composer install     # populates ./vendor for the mounted code
 #
+# The four front ends are in this file too, each building its own image from its
+# own Dockerfile. That is the same shape docker-compose.prod.yml uses, so an
+# application is its own image in development and not only in production.
+#
+# There is a second host-side prerequisite, and it only bites the first time.
+# `packages/api-client/src/generated` is produced by `php artisan
+# api-client:generate` and is not committed, because it is derived from
+# routes/api.php. Each front-end build compiles that generated client, so without
+# it the four `up --build` runs fail with a module-resolution error that names
+# nothing about the real cause. One command, and after the first run the
+# directory is cached.
+#
 # .env is read from the bind mount, so the normal Laravel file just works.
 
 name: fixmate
+
+x-front-end: &front-end
+  restart: unless-stopped
+  # A front end is nginx serving a static export: tens of megabytes of RSS, not
+  # a PHP runtime. The limit is here so one front end cannot starve the others
+  # on a small machine.
+  deploy:
+    resources:
+      limits:
+        memory: 96M
+  # Asked of the export's own index.html rather than of a process, so it reports
+  # healthy only when the application is actually being served. A container whose
+  # nginx is up but serving the wrong directory would pass a port check.
+  healthcheck:
+    test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1/up"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 5s
+  networks: [fixmate]
 
 x-app-image: &app-image
   build:
@@ -90,6 +123,89 @@ services:
       redis:
         condition: service_healthy
     networks: [fixmate]
+
+  # -------------------------------------------------------------------------
+  # The four front ends
+  # -------------------------------------------------------------------------
+  # One service per application, each building its own image from its own
+  # Dockerfile, which is the same division docker-compose.prod.yml draws. The
+  # pair is written out rather than derived, because the directory is `apps/user`
+  # and the image is `user-app` - they differ by an `-app` suffix, which is
+  # exactly the sort of thing a loop that derived one from the other gets wrong.
+  #
+  # The build context is the REPOSITORY ROOT and not the application directory,
+  # for the reason the Dockerfile itself documents: the workspace hoists
+  # node_modules to the root and `npm ci` needs a lockfile naming every member,
+  # neither of which exists inside apps/<name>. So `dockerfile` names the file and
+  # `context` stays `.`.
+  #
+  # NEXT_PUBLIC_API_URL is inlined into the export at build time, so there is no
+  # runtime setting for it. Its default has to agree with APP_URL in
+  # x-app-environment above, and the published ports have to agree with the
+  # origins in config/applications.php - which default to localhost:3000 through
+  # :3003, the ports published here. A front end on an address the back end does
+  # not grant is a browser whose every request is refused by CORS, and the
+  # symptom is a sign-in that fails with no error the sign-in screen can show.
+  #
+  # Three deliberate omissions, the same three as production:
+  #
+  #   * No `pull_policy: always`. Production pulls every image from a registry, so
+  #     always-pulling is correct there and actively harmful here: Compose would
+  #     try to pull `fixmate/user-app:dev` rather than build it, and fail with
+  #     `pull access denied`. In development the image is built locally.
+  #
+  #   * No `env_file`. A front end is a directory of files and reads nothing at
+  #     run time; passing the file in would suggest otherwise and invite a
+  #     setting that silently does nothing.
+  #
+  #   * No `depends_on`, and no bind mount. Nothing here talks to MySQL or Redis,
+  #     and a static export is produced at build time, so there is nothing on the
+  #     host to mount and no source to rebuild on. Changing a front end means
+  #     rebuilding that one image.
+
+  user-app:
+    <<: *front-end
+    build:
+      context: .
+      dockerfile: apps/user/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: fixmate/user-app:dev
+    ports:
+      - "${USER_APP_PORT:-3000}:80"
+
+  worker-app:
+    <<: *front-end
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: fixmate/worker-app:dev
+    ports:
+      - "${WORKER_APP_PORT:-3001}:80"
+
+  admin-app:
+    <<: *front-end
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: fixmate/admin-app:dev
+    ports:
+      - "${ADMIN_APP_PORT:-3002}:80"
+
+  super-admin-app:
+    <<: *front-end
+    build:
+      context: .
+      dockerfile: apps/super-admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: fixmate/super-admin-app:dev
+    ports:
+      - "${SUPER_ADMIN_APP_PORT:-3003}:80"
 
   mysql:
     image: mysql:8.4
