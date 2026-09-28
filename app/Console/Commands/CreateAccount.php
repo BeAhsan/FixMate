@@ -286,9 +286,19 @@ class CreateAccount extends Command
         $this->newLine();
         $this->line('  This account must set a password of its own before it can be used.');
         $this->newLine();
-        $this->line('  Sign in at the '.$type->label().' application with the password above,');
-        $this->line('  and you will be taken straight to a screen to choose a new one. Until');
-        $this->line('  you do, every other part of the application refuses the session.');
+        $this->line('  Sign in at the '.$type->label().' application with the password above.');
+        $this->line('  Until the password is replaced, every other part of the application');
+        $this->line('  refuses the session.');
+        $this->newLine();
+
+        // What the person is actually told to do next, and it is the reset flow
+        // rather than a change screen, because no front end calls the
+        // password-change route yet - the four dashboards are shell-only. Promising
+        // a screen that does not exist would be the worst thing to put in a message
+        // somebody reads once, on a machine they are setting up.
+        $this->line('  No application has a screen for this yet, so the route to a new');
+        $this->line('  password today is "forgot password" at the same address. That flow');
+        $this->line('  is deliberately outside the guard, which is why it still works.');
         $this->newLine();
     }
 }

@@ -387,13 +387,30 @@ to any log, so if you lose it, run the command again with a different address.
 Two things worth knowing before you use it:
 
 - **Hand the password over out of band.** It is on your terminal, in your scrollback
-  and in whatever you copy it into. The intended next step is that the new owner
-  signs in and uses "forgot password" to set their own.
-- **`--password` exists and is a bad idea.** An argument is visible in shell history
-  and in the process listing. The command warns you when you use it.
+  and in whatever you copy it into.
+- **The account is flagged `must_change_password`**, so every session it gets is
+  refused everywhere until the password is replaced. Sign-in reports the flag, and
+  `EnsurePasswordChanged` is the control behind it.
+
+`--password` exists and is a bad idea: an argument is visible in shell history and
+in the process listing. The command warns you when you use it.
 
 The command only checks the store it is provisioning into. If it says an address is
 taken, that is true of *that* account type and says nothing about the other three.
+
+### Replacing a provisioned password
+
+An account created above signs in, and is then refused by every route except
+`POST /api/v1/identity/{type}/password/change`. That call takes the current
+password and a new one, and withdraws every other session the account had — a
+session opened with the old password keeps working however new the stored hash is.
+
+**No front end calls that route yet.** The four dashboards are shell-only, so
+nothing reads the sign-in flag and routes to a change screen. Until that exists, a
+provisioned account reaches its new password through the ordinary "forgot password"
+flow, which is outside the guard and therefore still works. That gap is the
+remaining piece of ticket 26, and it is a front-end change rather than a back-end
+one.
 
 ## Things worth knowing
 
