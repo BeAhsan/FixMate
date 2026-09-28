@@ -23,7 +23,6 @@ import {
     suspend as suspendAdminRoute,
 } from './generated/routes/admins'
 import { index as listAccountsRoute } from './generated/routes/accounts'
-import { index as listProductsRoute } from './generated/routes/products'
 import {
     forgotPassword as forgotPasswordSuperAdmin,
     me as meSuperAdmin,
@@ -522,41 +521,6 @@ const accountDirectoryResponse: Schema<{ data: AccountSummary[] }> = object({
 })
 
 /**
- * One product in the catalogue.
- *
- * `price` is a `number` and not a string, and that is the whole reason this
- * operation exists in this shape. The back end stores the price as a fixed-scale
- * decimal, reads it back as a string, and converts it to a number in exactly one
- * place — the API resource — because this side formats the value directly and
- * will not coerce a string first. Declaring `string()` here would not catch the
- * mistake: it would make the two sides agree on the wrong type, and the failure
- * would move out of a test and into a rendered price.
- */
-export interface Product {
-    id: number
-    name: string
-    price: number
-}
-
-/**
- * The catalogue, always as an array.
- *
- * An empty catalogue is a 200 with `{"data": []}` — not a 404 and not a null — so
- * a caller receives `[]` and renders a list, rather than receiving nothing and
- * having to decide whether that is a failure. `client.request` unwraps the
- * `data` envelope, which is why this operation resolves with the array itself.
- */
-const productListResponse: Schema<{ data: Product[] }> = object({
-    data: array(
-        object({
-            id: number(),
-            name: string(),
-            price: number(),
-        }),
-    ),
-})
-
-/**
  * A promotion returns the new account and a warning.
  *
  * `warning` is nullable and never absent. A field that appears and disappears is a
@@ -706,18 +670,6 @@ const definitions = {
     listAccounts: {
         route: () => listAccountsRoute() satisfies Route,
         response: accountDirectoryResponse,
-    },
-
-    // The public catalogue. Not super-administrator-only and not hidden from the
-    // applications: it is the one endpoint on this API that any of them can call
-    // without a token, which is a deliberate property of the route and not an
-    // omission, so nothing below carries a credential.
-    //
-    // The route takes no parameter, so it is resolved once here rather than being
-    // stored as a function the way `listAccounts` is.
-    listProducts: {
-        route: listProductsRoute() satisfies Route,
-        response: productListResponse,
     },
 
     suspendAdmin: {
@@ -1045,18 +997,6 @@ export interface Operations {
         password: string
     }): Promise<CurrentAccount>
 
-    /**
-     * Every product in the catalogue.
-     *
-     * The one operation on this API that needs no credential. It resolves with an
-     * empty `data` array when the catalogue is empty — the back end answers 200
-     * with `{"data": []}` and never 404 — so a caller renders a list either way
-     * and never has to treat "no products" as an error.
-     *
-     * `price` is a number, so it can be formatted directly. A value that arrived
-     * as a string is the one thing this response must never contain.
-     */
-    listProducts(): Promise<Product[]>
 }
 
 /**
@@ -1290,13 +1230,6 @@ export function createOperations(client: ApiClient): Operations {
             const { data } = await client.request(definitions.changePasswordSuperAdmin.route, {
                 body: input,
                 response: definitions.changePasswordSuperAdmin.response,
-            })
-
-            return data
-        },
-        async listProducts() {
-            const { data } = await client.request(definitions.listProducts.route, {
-                response: definitions.listProducts.response,
             })
 
             return data
