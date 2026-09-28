@@ -39,10 +39,6 @@
     {
       "name": "Accounts",
       "description": "The account-management surface, which is super administrators only."
-    },
-    {
-      "name": "Catalog",
-      "description": "The public product catalogue. The one surface on this API that carries no credential: it is readable by anyone, which is a property of the route and not an oversight."
     }
   ],
   "paths": {
@@ -1303,30 +1299,6 @@
           }
         }
       }
-    },
-    "/api/products": {
-      "get": {
-        "operationId": "listProducts",
-        "x-laravel-route": "products.index",
-        "tags": [
-          "Catalog"
-        ],
-        "summary": "Every product in the catalogue.",
-        "description": "No credential is required, and none is expected. This is the one endpoint on the API a caller can reach without signing in.\n\n`data` is always an array. A catalogue with nothing in it is a `200` with `{\"data\": []}` - not a 404, and not `null` - so a client renders a list in both cases and never has to treat \"no products\" as a failure. There is no pagination envelope: `data` is the only key in the response.\n\n`price` is a JSON number and not a string. It is stored as a fixed-scale decimal of two places and is rendered here as a bare number: no currency symbol, no thousands separator, and no guarantee of a trailing zero. A price of `5.00` is returned as `5` and a price of `124.50` as `124.5`. Both are the same JSON number and the same JavaScript value - JSON has no distinction between `5` and `5.0` - so format the value to two places for display rather than counting the places in the payload.\n\nField names are exactly `id`, `name` and `price`.",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "The catalogue. An empty catalogue is also a 200, with an empty `data` array.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProductListResponse"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -1942,47 +1914,6 @@
           "password": {
             "type": "string",
             "description": "The new password. Must satisfy the same policy as the reset flow, and must not be the current password — otherwise \"you must change your password\" could be satisfied by submitting the shared one again, and the flag cleared with nothing changed."
-          }
-        }
-      },
-      "ProductListResponse": {
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "type": "array",
-            "description": "Every product, ordered by identifier. An empty catalogue is an empty array, never a null and never an absent key.",
-            "items": {
-              "$ref": "#/components/schemas/Product"
-            }
-          }
-        }
-      },
-      "Product": {
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "price"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "integer",
-            "description": "The product identifier. A JSON integer, and stable for the life of the product."
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "description": "The product name. Never empty: an unnamed product is not a state this API can return."
-          },
-          "price": {
-            "type": "number",
-            "format": "double",
-            "multipleOf": 0.01,
-            "description": "The price as a bare JSON number. **A number, not a string** - it is rendered here as `19.99` and not `\"19.99\"`, because the front end formats this value directly and will not coerce a string first.\n\nThe stored value is a decimal(10,2), so it always has two decimal places internally, but JSON does not carry that: a price of `5.00` is returned as `5` and `124.50` as `124.5`. These are the same JSON number and the same JavaScript value. Format to two places for display; do not read the number of places off the payload."
           }
         }
       }
