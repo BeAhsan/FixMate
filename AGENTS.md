@@ -133,6 +133,20 @@ above live outside the block — keep it that way.
 `.agents/skills` as its install path, so leaving skills enabled there would write
 a duplicate set back under colliding names. This repo owns `.opencode/skills/`.
 
+### An untracked migration does not block a pull — but it will break tests
+
+An agent's untracked work in the shared workspace silently collides with work
+that has since been pushed, and blocks `git merge --ff-only` with "untracked
+working tree files would be overwritten". The trap is subtler when the untracked
+file is a migration whose filename differs from the pushed one: git does not
+treat it as a conflict, both files survive the pull, and the failure you actually
+see is a "table already exists" migration error at test time — several steps away
+from its cause, pointing nowhere near the real problem.
+
+The step to run before pulling is `git status --porcelain`, and for each `??`
+path decide explicitly whether it is stale (delete it) or in-flight (stash it).
+Never leave it to be discovered by a test.
+
 ## Commands
 
 Gate order matches the Jenkins `Verify` → `Test` → `Front end` stages — **Pint
