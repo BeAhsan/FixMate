@@ -5,6 +5,7 @@ import {
     createAccessTokenSource,
     createSession,
     memoryRenewalTokenStore,
+    operationsFor,
     type RenewalTokenStore,
 } from '../src'
 import type { Session, SessionOptions } from '../src'
@@ -926,6 +927,70 @@ describe('knowing who the session belongs to', () => {
         await session.signOut()
 
         expect(session.mustChangePassword()).toBe(false)
+    })
+})
+
+// -------------------------------------------------------------------------
+// The operations an application is allowed to hold
+//
+// The five session operations are bound for every application. Anything else an
+// application's entry names rides alongside — and the narrowing is the point:
+// for the three applications without `listAccounts`, the name is absent from the
+// type entirely, which is what makes the mistake unwritable rather than merely
+// refused. TypeScript proves the negative at compile time; these tests prove it
+// again at run time so the property is demonstrable, not assumed.
+// -------------------------------------------------------------------------
+
+describe('the operations an application is allowed to hold', () => {
+    /**
+     * A real client over a fetch that records and answers, like the tests above.
+     *
+     * Typed for the super-admin key only: a helper over the union of two keys
+     * would type its result as the *union's* operations, where `listAccounts` is
+     * hidden by the member that lacks it — which is the narrowing working as
+     * designed, in the wrong place.
+     */
+    function superAdminOperations() {
+        const requests: { url: string; authorization: string | null }[] = []
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push({
+                url: String(input),
+                authorization: new Headers(init?.headers).get('Authorization'),
+            })
+
+            return json({
+                data: [{ type: 'users', id: 1, name: 'A', email: 'a@example.test', status: 'active' }],
+            })
+        })
+
+        const tokens = createAccessTokenSource()
+        const client = createApiClient({
+            baseUrl: BASE_URL,
+            fetch: fetchMock as unknown as typeof fetch,
+            getAccessToken: tokens.get,
+        })
+
+        return { operations: operationsFor(createOperations(client), 'super-admin'), requests }
+    }
+
+    it('binds the account directory for the super administrator application', async () => {
+        const { operations, requests } = superAdminOperations()
+
+        const directory = await operations.listAccounts()
+
+        expect(directory).toHaveLength(1)
+        expect(requests[0]?.url).toBe(`${BASE_URL}/api/v1/identity/accounts`)
+        expect(requests[0]?.authorization).toBeNull()
+    })
+
+    it('never binds the account directory for the end user application', () => {
+        // Runtime half of the compile-time narrowing. If the map ever grew the
+        // name onto the user entry by accident, this fails before an application
+        // could be built that offered a customer the account directory.
+        expect(OPERATIONS_BY_APPLICATION.user).not.toHaveProperty('listAccounts')
+        expect(OPERATIONS_BY_APPLICATION.worker).not.toHaveProperty('listAccounts')
+        expect(OPERATIONS_BY_APPLICATION.admin).not.toHaveProperty('listAccounts')
+        expect(OPERATIONS_BY_APPLICATION['super-admin']).toHaveProperty('listAccounts')
     })
 })
 })

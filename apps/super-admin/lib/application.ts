@@ -29,6 +29,12 @@ import { createApplication } from '@fixmate/session'
  * The super administrator's navigation, and the only application where the
  * restricted sections are actually reachable: a super administrator's token carries
  * the wildcard ability. Every `requiredAbility` below is satisfied.
+ *
+ * `operations` is exported beside the components because the account directory is
+ * not one of the session's five operations: the page that renders it calls it
+ * directly. The name is available to this application because the operations map
+ * in `@fixmate/session` lists it under this application's key, and it is not
+ * available to the other three because theirs do not.
  */
 const sections = [
     { href: '/', label: 'Dashboard' },
@@ -39,6 +45,7 @@ const sections = [
 
 export const {
     session,
+    operations,
     SessionProvider,
     ApplicationShell,
     SignInScreen,

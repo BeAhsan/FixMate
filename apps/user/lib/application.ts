@@ -53,4 +53,17 @@ export const {
     baseUrl: resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_URL),
     sections,
     subject: 'end user',
+    // The end user's door is the one built to the design in Figma: an OTP-first
+    // screen with the email form behind a toggle. `plain` stays the default in
+    // `@fixmate/session`, so the worker, administrator and super administrator
+    // doors are untouched by this — the other three applications say nothing here.
+    signInFlow: 'designed',
+    signInTitle: 'Customer Sign In',
+    // The end user's door is the one wearing the floating, translucent treatment
+    // — the design in Figma. It is a style and nothing else, and it is set here
+    // rather than inside the shared screen so the other three doors are
+    // unaffected: `signInSurface` is read by `SignInForm`, which every
+    // application renders, and an application that does not name a surface gets
+    // `'plain'`.
+    signInSurface: 'apple',
 })

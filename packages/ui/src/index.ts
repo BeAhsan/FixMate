@@ -35,4 +35,7 @@ export type { ButtonProps } from './primitives/button'
 export { Alert } from './primitives/alert'
 export type { AlertProps, AlertTone } from './primitives/alert'
 
+export { SignInSurface, APPLE_GROUND, APPLE_SURFACE, APPLE_PRESS } from './primitives/sign-in-surface'
+export type { SignInSurfaceProps } from './primitives/sign-in-surface'
+
 export { Card, EmptyState } from './primitives/card'

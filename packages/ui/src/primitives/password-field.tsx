@@ -35,6 +35,16 @@ import { Field, fieldInputProps, type FieldProps } from './field'
  */
 export interface PasswordFieldProps
     extends Pick<FieldProps, 'label' | 'hint' | 'error'> {
+    /**
+     * Classes for the input itself, replacing the default field styling.
+     *
+     * A *replacement* rather than an addition, on purpose. An input's look is
+     * one thing — border, background, padding, radius — and two class sets
+     * describing it produce a conflict resolved by source order in the compiled
+     * stylesheet, which is not a decision anybody can see or test. A caller that
+     * wants a different field says what it wants.
+     */
+    className?: string
     name: string
     /**
      * `current-password` on a sign-in form, `new-password` when choosing one.
@@ -51,6 +61,7 @@ export function PasswordField({
     label,
     hint,
     error,
+    className,
     name,
     autoComplete,
     required = true,
@@ -74,8 +85,15 @@ export function PasswordField({
                             autoComplete,
                             required,
                             onChange: (event) => onValueChange?.(event.target.value),
-                            className:
-                                'min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900',
+                            // `min-w-0 flex-1` is structural rather than cosmetic
+                            // and is kept in both cases: the input has to be
+                            // shrinkable or the reveal button beside it is pushed
+                            // out of the row on a narrow screen.
+                            className: [
+                                'min-w-0 flex-1',
+                                className ??
+                                    'rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900',
+                            ].join(' '),
                         })}
                     />
 

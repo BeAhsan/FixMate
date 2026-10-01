@@ -17,6 +17,26 @@
 @source '../../../packages/ui/src';
 
 /*
+ * The sign-in and change-password screens, for the same reason as the line above.
+ *
+ * This one was missing, and the sign-in screen therefore shipped with no styling
+ * at all in all four applications: `max-w-md`, `text-2xl`, `gap-8`, `gap-5` and
+ * `py-16` are used only in `packages/session`, Tailwind never scanned for them,
+ * and none of them reached the compiled CSS. Nothing warned. The build exited 0
+ * and produced a `<main>` with no width, no type scale and no spacing.
+ *
+ * The image build greps the compiled CSS for `max-w-5xl`, which is a class only
+ * `packages/ui` uses — so the guard was satisfied by the shell while the sign-in
+ * screen it does not cover was unstyled. That grep is why this file needs a
+ * second `@source`, and why the Dockerfile now asserts a `packages/session`
+ * class too.
+ *
+ * A third package would need a third line here, and would fail in exactly the
+ * same silent way if it did not get one.
+ */
+@source '../../../packages/session/src';
+
+/*
  * The base layer, declared rather than inherited.
  *
  * Stating the handful of properties the shell depends on means the export looks

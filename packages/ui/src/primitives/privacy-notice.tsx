@@ -32,16 +32,24 @@
  * string in one place. Four applications share this screen, and four copies of a
  * paragraph that has to stay accurate is four places for it to stop being accurate.
  */
+/**
+ * Classes for the notice's own surface, replacing the default.
+ *
+ * A *replacement*, like {@link PasswordField}'s `className`, and for the same
+ * reason. Appending would put two class sets on one element describing the same
+ * three properties — `border-slate-200` and `border-slate-200/70`, `bg-slate-50`
+ * and `bg-white/50` — and which one wins is decided by their order in the
+ * compiled stylesheet, not by their order here. That is a decision no reader can
+ * see and no test can assert.
+ */
 export function PrivacyNotice({ className }: { className?: string }) {
     return (
         <aside
             aria-labelledby="privacy-notice-heading"
-            className={[
-                'rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400',
-                className,
-            ]
-                .filter(Boolean)
-                .join(' ')}
+            className={
+                className ??
+                'rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+            }
         >
             <h2 id="privacy-notice-heading" className="font-medium">
                 What happens when you sign in

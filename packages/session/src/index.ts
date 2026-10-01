@@ -30,7 +30,10 @@ export {
     createApplicationClient,
     operationsFor,
 } from './application-operations'
-export type { ApplicationKey } from './application-operations'
+export type {
+    ApplicationKey,
+    OperationsForApplication,
+} from './application-operations'
 
 export {
     createApplication,

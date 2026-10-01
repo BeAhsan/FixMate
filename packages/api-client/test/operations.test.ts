@@ -445,4 +445,107 @@ describe('reading one administrator record', () => {
 
         expect(result).toEqual({ id: 4, name: 'Ada Admin', email: 'ada@example.test', status: 'active' })
     })
+
+describe('listing every account in the platform', () => {
+    // The four types, in the order the back end sends them: grouped by type, then
+    // by identifier within each type. The order is the back end's decision and
+    // this fixture keeps it, so a test that accidentally re-sorts can be seen to.
+    const directory = {
+        data: [
+            { type: 'users', id: 3, name: 'A Customer', email: 'customer@example.test', status: 'active' },
+            { type: 'workers', id: 2, name: 'A Worker', email: 'worker@example.test', status: 'pending' },
+            { type: 'admins', id: 4, name: 'An Administrator', email: 'admin@example.test', status: 'active' },
+            { type: 'admins', id: 5, name: 'Another Administrator', email: 'admin2@example.test', status: 'suspended' },
+            { type: 'super_admins', id: 1, name: 'The Caller', email: 'super@example.test', status: 'active' },
+        ],
+    }
+
+    it('gets the directory URL and returns the unwrapped list', async () => {
+        const { fetch, calls } = recordingFetch(directory)
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.listAccounts()
+
+        expect(calls).toEqual(['https://api.fixmate.test/api/v1/identity/accounts'])
+        expect(result).toHaveLength(5)
+        expect(result[0]).toEqual({
+            type: 'users',
+            id: 3,
+            name: 'A Customer',
+            email: 'customer@example.test',
+            status: 'active',
+        })
+    })
+
+    it('resolves with an empty list when the platform has no accounts, and never calls that an error', async () => {
+        // The back end answers 200 with {"data": []} for an empty directory, so a
+        // caller renders a list either way. A rejection here would make the one
+        // state a fresh platform is in look like a failure to load.
+        const { fetch } = recordingFetch({ data: [] })
+        const operations = createOperations(client(fetch))
+
+        const result = await operations.listAccounts()
+
+        expect(result).toEqual([])
+    })
+
+    it('sends the bearer token, because the directory is behind accounts:read', async () => {
+        let authorization: string | null = null
+        const fetch = (async (url: unknown, init: RequestInit = {}) => {
+            authorization = new Headers(init.headers).get('Authorization')
+
+            return reply(200, directory)()
+        }) as unknown as typeof globalThis.fetch
+        const operations = createOperations(
+            createApiClient({
+                baseUrl: 'https://api.fixmate.test',
+                fetch,
+                getAccessToken: () => 'plain-text-token',
+            }),
+        )
+
+        await operations.listAccounts()
+
+        expect(authorization).toBe('Bearer plain-text-token')
+    })
+
+    it('reports a non-super-administrator caller as forbidden, whether or not accounts exist', async () => {
+        // The back end refuses on the account type before anything else, so the
+        // refusal says nothing about the directory's contents. A 404 here would be
+        // a way of asking questions; a 403 is not.
+        const { fetch } = recordingFetch({ message: 'Your account is not permitted to perform this action.' }, 403)
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.listAccounts().catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('forbidden')
+        expect(error.kind).not.toBe('notFound')
+    })
+
+    it('rejects a row that stopped carrying its account type', async () => {
+        // `type` is what makes a mixed list self-describing; a row without it is a
+        // row the front end cannot interpret and must not silently render.
+        const { fetch } = recordingFetch({
+            data: [{ id: 3, name: 'A Customer', email: 'customer@example.test', status: 'active' }],
+        })
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.listAccounts().catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('contract')
+        expect(error.message).toContain('data.0.type')
+    })
+
+    it('rejects a response missing the status it promised', async () => {
+        const { fetch } = recordingFetch({
+            data: [{ type: 'users', id: 3, name: 'A Customer', email: 'customer@example.test' }],
+        })
+        const operations = createOperations(client(fetch))
+
+        const error = (await operations.listAccounts().catch((e: unknown) => e)) as ApiError
+
+        expect(error.kind).toBe('contract')
+        expect(error.message).toContain('data.0.status')
+    })
+})
 })

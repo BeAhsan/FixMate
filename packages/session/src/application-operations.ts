@@ -1,4 +1,4 @@
-import { createApiClient, createOperations, type Operations } from '@fixmate/api-client'
+import { createApiClient, createOperations, type AccountSummary, type Operations } from '@fixmate/api-client'
 import { createAccessTokenSource } from './access-token-source'
 
 /**
@@ -45,25 +45,41 @@ export const OPERATIONS_BY_APPLICATION = {
         signOut: 'signOutSuperAdmin',
         whoAmI: 'currentSuperAdmin',
         changePassword: 'changePasswordSuperAdmin',
+        /**
+         * The account directory. Super-administrator-only on the back end, and
+         * named here so the session's narrowing can hand it — and only it — to
+         * the one application whose token can actually reach it.
+         */
+        listAccounts: 'listAccounts',
     },
 } as const satisfies Record<string, Record<string, keyof Operations>>
 
 export type ApplicationKey = keyof typeof OPERATIONS_BY_APPLICATION
 
 /**
- * The five operations one application is allowed to use.
+ * The operations one application is allowed to use.
  *
  * Returning a narrowed object rather than the whole {@link Operations} is the
  * point: an application holding the full client could call `signInAdmin` from the
  * customer application, and the only thing stopping it would be the back end's
- * 403. Holding five functions means the mistake is not available to make.
+ * 403. Holding the bound functions means the mistake is not available to make.
  *
- * `changePassword` is the fifth, and it is here rather than called by each
+ * The five session operations are bound for every application. Anything else the
+ * application's own entry names is bound alongside them — which is how the super
+ * administrator application receives `listAccounts` and the other three receive
+ * nothing: the extra is on their entry or it is not, and for the three it is
+ * not, so `operations.listAccounts` is not merely a 403 waiting to happen but a
+ * name the application cannot hold.
+ *
+ * `changePassword` is the fifth of the five, and it is here rather than called by each
  * application for the same reason as the other four: the door it belongs to is
  * decided by the application key, and an application that could name one would be
  * an application that could aim the change at another account type's store.
  */
-export function operationsFor(operations: Operations, application: ApplicationKey) {
+export function operationsFor<K extends ApplicationKey>(
+    operations: Operations,
+    application: K,
+) {
     const names = OPERATIONS_BY_APPLICATION[application]
 
     type CurrentAccount = {
@@ -89,8 +105,59 @@ export function operationsFor(operations: Operations, application: ApplicationKe
             current_password: string
             password: string
         }) => Promise<CurrentAccount>,
-    }
+        // The conditional is the whole narrowing. `listAccounts` is bound only
+        // when this application's entry carries it, so the returned type has the
+        // key for the super-admin application and does not have it for the other
+        // three — the property the test below demonstrates at run time.
+        ...('listAccounts' in names
+            ? { listAccounts: operations[names.listAccounts].bind(operations) }
+            : {}),
+    } as OperationsForApplication<K>
 }
+
+/**
+ * The bound operations an application of key `K` may hold: the five session
+ * operations, plus any extra its entry in {@link OPERATIONS_BY_APPLICATION}
+ * names.
+ *
+ * Written as a conditional type rather than inferred, because the spread above
+ * widens the returned object to the union of all four applications' shapes. This
+ * recovers the narrowing from the key itself, so `operationsFor(operations,
+ * 'user')` has no `listAccounts` in its type and the mistake is refused where it
+ * is written rather than at the API.
+ */
+export type OperationsForApplication<K extends ApplicationKey> = {
+    signIn: (input: { email: string; password: string }) => Promise<{
+        token: string
+        renewal_token: string
+        access_token_expires_at: string
+        renewal_token_expires_at: string
+        must_change_password: boolean
+    }>
+    renew: () => Promise<{
+        access_token: string
+        renewal_token: string
+        access_token_expires_at: string
+        renewal_token_expires_at: string
+        must_change_password: boolean
+    }>
+    signOut: () => Promise<{ message: string }>
+    whoAmI: () => Promise<{
+        account_type: string
+        account: { id: number; name: string; email: string; status: string }
+        abilities: string[]
+    }>
+    changePassword: (input: {
+        current_password: string
+        password: string
+    }) => Promise<{
+        account_type: string
+        account: { id: number; name: string; email: string; status: string }
+        abilities: string[]
+    }>
+} & ((typeof OPERATIONS_BY_APPLICATION)[K] extends { listAccounts: string }
+    ? { listAccounts: () => Promise<AccountSummary[]> }
+    : Record<never, never>)
 
 /**
  * Build a client for one application.

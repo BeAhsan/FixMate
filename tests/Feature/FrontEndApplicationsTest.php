@@ -31,6 +31,9 @@ class FrontEndApplicationsTest extends TestCase
      *   is the same everywhere. It is the one genuinely duplicated file per
      *   application, and allowing it by name is cheaper than inventing a shared
      *   location for a test that has to be runnable from inside each application.
+     * - `vitest.config.mts` is the test runner's path-alias resolution, which is
+     *   test infrastructure for the same reason: identical in all four, and
+     *   useless in a shared location because Vite resolves it per package root.
      * - `next.config.ts`, `postcss.config.mjs` and `tsconfig.json` are three lines
      *   of configuration each, and a shared one would need a parameterised import
      *   to know which application it was configuring.
@@ -50,6 +53,7 @@ class FrontEndApplicationsTest extends TestCase
      */
     private const ALLOWED_IDENTICAL = [
         'test/static-export.test.ts',
+        'vitest.config.mts',
         'next.config.ts',
         'postcss.config.mjs',
         'tsconfig.json',
@@ -58,6 +62,25 @@ class FrontEndApplicationsTest extends TestCase
         'app/providers.tsx',
         'app/sign-in/page.tsx',
         'app/change-password/page.tsx',
+    ];
+
+    /**
+     * Files that deliberately exist in some applications and not others.
+     *
+     * A page one application owns is a difference the other three must not
+     * share, and giving them an empty copy would be three dead pages lying
+     * about what they do. The account directory is the super administrator's
+     * screen: the back end refuses every other account type, so a copy in the
+     * user application would be a page whose every request is a 403. Each entry
+     * names the complete set of applications the file may exist in, and that
+     * set is asserted exactly — a file here that turns up somewhere else fails,
+     * and one that comes to exist in all four becomes a stale allowance and
+     * fails the other way.
+     */
+    private const ALLOWED_SINGLETON = [
+        'app/accounts/page.tsx' => ['super-admin'],
+        'lib/accounts-screen.tsx' => ['super-admin'],
+        'test/accounts-page.test.tsx' => ['super-admin'],
     ];
 
     public function test_all_four_applications_exist(): void
@@ -260,6 +283,16 @@ class FrontEndApplicationsTest extends TestCase
             }
 
             if (count($perApplication) !== count(self::APPLICATIONS)) {
+                // A deliberate singleton is not a missing copy. The exact set is
+                // what is asserted: one application more than named here is the
+                // difference spreading without a decision, which is the thing
+                // this test exists to catch.
+                $allowedIn = self::ALLOWED_SINGLETON[$relative] ?? null;
+
+                if ($allowedIn !== null && $allowedIn === array_keys($perApplication)) {
+                    continue;
+                }
+
                 $missing = array_diff(self::APPLICATIONS, array_keys($perApplication));
 
                 $this->assertSame(
@@ -268,6 +301,15 @@ class FrontEndApplicationsTest extends TestCase
                     "{$relative} exists in some applications and not others. "
                     .'Every application should have the same set of files, or the difference is deliberate and belongs in a test.',
                 );
+
+                continue;
+            }
+
+            // Named as a singleton and now everywhere: the allowance has stopped
+            // meaning anything, exactly as a stale entry in ALLOWED_IDENTICAL
+            // would, and is removed rather than kept.
+            if (in_array($relative, array_keys(self::ALLOWED_SINGLETON), true)) {
+                $staleAllowances[] = $relative;
 
                 continue;
             }

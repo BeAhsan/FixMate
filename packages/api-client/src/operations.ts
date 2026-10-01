@@ -963,6 +963,25 @@ export interface Operations {
     showAdmin(admin: number): Promise<AdminAccount>
 
     /**
+     * Every account in the platform, across all four account types.
+     *
+     * A super administrator operation: the token must carry `accounts:read`, and
+     * an end user, a worker and an administrator are all refused with a
+     * `forbidden` ApiError whether or not any account exists. There is no
+     * identifier to probe, so there is nothing here a caller can enumerate.
+     *
+     * Resolves with an empty array when the platform has no accounts — the back
+     * end answers 200 with `{"data": []}` and never 404 — so a caller renders a
+     * list either way and never has to treat "no accounts yet" as an error.
+     *
+     * The rows arrive grouped by account type, then by identifier within each
+     * type. That order is the back end's choice, kept so a person comparing two
+     * moments sees rows in the same places; a caller that re-sorts it is spending
+     * a property it was given for free.
+     */
+    listAccounts(): Promise<AccountSummary[]>
+
+    /**
      * Exchange a renewal token for a new access token and a new renewal token.
      *
      * The caller's existing renewal token is spent by this call. That is the
@@ -1191,6 +1210,13 @@ export function createOperations(client: ApiClient): Operations {
         async showAdmin(admin) {
             const { data } = await client.request(definitions.showAdmin.route(admin), {
                 response: definitions.showAdmin.response,
+            })
+
+            return data
+        },
+        async listAccounts() {
+            const { data } = await client.request(definitions.listAccounts.route(), {
+                response: definitions.listAccounts.response,
             })
 
             return data

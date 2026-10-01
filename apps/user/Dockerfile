@@ -118,6 +118,20 @@ RUN npm run build --workspace=@fixmate/user-app \
 RUN grep -rq 'max-w-5xl' apps/user/out/_next/static/ \
     || (echo "the shared package's Tailwind classes are missing from the build; check the @source path in apps/user/app/globals.css" >&2; exit 1)
 
+# A second witness, for the second `@source`.
+#
+# The check above is satisfied by `packages/ui` alone, which is how the sign-in
+# screen shipped completely unstyled in all four applications: it is built in
+# `packages/session`, globals.css named only `packages/ui`, and Tailwind dropped
+# every class the sign-in screen uses. `max-w-5xl` was present the whole time, so
+# the guard passed and the screen nobody checked was blank.
+#
+# `max-w-md` appears only in `packages/session` — the sign-in and
+# change-password screens. One witness per `@source` line, or a package added
+# later and forgotten here fails in exactly the same silent way.
+RUN grep -rq 'max-w-md' apps/user/out/_next/static/ \
+    || (echo "the sign-in screen's Tailwind classes are missing from the build; check the packages/session @source path in apps/user/app/globals.css" >&2; exit 1)
+
 # ---------------------------------------------------------------------------
 # Stage 2 - Serve it
 # ---------------------------------------------------------------------------

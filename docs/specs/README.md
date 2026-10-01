@@ -23,6 +23,8 @@ whole spec into the issue body — a copy with no owner drifts from the original
 | # | Spec | Status | Issue | Supersedes |
 | - | ---- | ------ | ----- | ---------- |
 | [0001](0001-platform-foundation-authentication-and-dashboards.md) | Platform foundation — authentication and dashboard shell for four front-end apps | Draft | _not yet published_ | — |
+| [0002](0002-super-admin-account-directory.md) | Super administrator account directory — one list of every account, every type | Accepted | _not yet published_ | — |
+| [0003](0003-super-admin-account-actions.md) | Super administrator account actions — suspend and promote administrators | Draft | _not yet published_ | — |
 
 ## Conventions
 

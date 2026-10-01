@@ -2,11 +2,14 @@
 
 import {
     Alert,
+    APPLE_GROUND,
+    APPLE_PRESS,
     AppShell,
     Button,
     Field,
     PasswordField,
     PrivacyNotice,
+    SignInSurface,
     fieldInputProps,
     type ShellSection,
 } from '@fixmate/ui'
@@ -23,7 +26,13 @@ import {
     type ReactNode,
 } from 'react'
 import { createAccessTokenSource } from '../access-token-source'
-import { createApplicationClient, operationsFor, type ApplicationKey } from '../application-operations'
+import { CustomerSignIn } from './customer-sign-in'
+import {
+    createApplicationClient,
+    operationsFor,
+    type ApplicationKey,
+    type OperationsForApplication,
+} from '../application-operations'
 import { createSession, type Session, type SessionEndReason, type SessionState } from '../index'
 import { reportUserActivity } from './report-user-activity'
 import { webStorageRenewalTokenStore } from '../renewal-token-store'
@@ -96,9 +105,9 @@ export function destinationFor({
  * An application supplies a *definition* and gets three components back. The
  * definition is the only place any of the four says which account type it is.
  */
-export interface ApplicationDefinition {
+export interface ApplicationDefinition<K extends ApplicationKey = ApplicationKey> {
     /** A key in the back end's `config/applications.php`. */
-    application: ApplicationKey
+    application: K
     /** Shown in the header. */
     applicationLabel: string
     /** The back end's address. Inlined at build time; see `resolveApiBaseUrl`. */
@@ -107,6 +116,31 @@ export interface ApplicationDefinition {
     sections: readonly ShellSection[]
     /** How this door describes itself, e.g. "end user". */
     subject?: string
+    /**
+     * Which sign-in treatment this door wears.
+     *
+     * `'plain'` is the default and the other three applications keep it, so
+     * choosing the other one is a per-application decision with a visible
+     * consequence — which is the point. It is a *style* and nothing else: no
+     * behaviour, no field, no operation and no ability differs between the two,
+     * so an application that sets it cannot reach anything the plain screen could
+     * not already reach.
+     */
+    signInSurface?: 'plain' | 'apple'
+    /**
+     * The designed sign-in screen, for the end user's door.
+     *
+     * Separate from {@link signInSurface} because it is not a style. The designed
+     * screen is a *different screen* — it leads with a one-time password and puts
+     * email behind a toggle — so choosing it is choosing a flow, and conflating
+     * that with a colour scheme would make the flag mean two things.
+     *
+     * `'plain'` remains the default, so the worker, administrator and super
+     * administrator doors are untouched by this.
+     */
+    signInFlow?: 'plain' | 'designed'
+    /** The header title on the designed screen. */
+    signInTitle?: string
     /** Where sign-in lives. A separate address, never a modal over a dashboard. */
     signInPath?: string
     /** Where to send somebody who signs in with nowhere in particular to go. */
@@ -121,8 +155,26 @@ export interface ApplicationDefinition {
     changePasswordPath?: string
 }
 
-export interface Application {
+/**
+ * One built application, generic over its own key.
+ *
+ * `operations` is present because the application occasionally has to call an
+ * operation that is not one of the session's five — the account directory is the
+ * first — and it is typed as the narrowed set for *this* application's key, not
+ * the full client. An application that names an operation its key was not given
+ * fails to compile here rather than at the API.
+ */
+export interface Application<K extends ApplicationKey = ApplicationKey> {
     session: Session
+    /**
+     * The operations bound for this application: the five the session runs on,
+     * plus any extra this application's key names in the operations map.
+     *
+     * Held by the application rather than consumed entirely by the session, so a
+     * page can call an operation the session has no opinion about without the
+     * session growing a method per screen.
+     */
+    operations: OperationsForApplication<K>
     /** Wraps the tree. Restores the session once, for every page. */
     SessionProvider: ComponentType<{ children: ReactNode }>
     /** The signed-in chrome: header, navigation, sign-out. */
@@ -149,7 +201,9 @@ export interface Application {
  * which is what makes "a front end physically cannot reach another
  * application's door" a property rather than a convention.
  */
-export function createApplication(definition: ApplicationDefinition): Application {
+export function createApplication<K extends ApplicationKey>(
+    definition: ApplicationDefinition<K>,
+): Application<K> {
     const signInPath = definition.signInPath ?? '/sign-in/'
     const homePath = definition.homePath ?? '/'
     const changePasswordPath = definition.changePasswordPath ?? '/change-password/'
@@ -159,6 +213,12 @@ export function createApplication(definition: ApplicationDefinition): Applicatio
     // is built with a getter, and the session that writes the holder is built
     // after it.
     const { tokens, operations } = createApplicationClient(definition.baseUrl)
+
+    // The narrowed operations, held for the application's own pages. The session
+    // below binds only the five it needs; the extra names — the account directory
+    // for the super administrator, today — ride alongside for the pages that are
+    // the reason they exist.
+    const applicationOperations = operationsFor(operations, definition.application)
 
     const session = createSession({
         tokens,
@@ -286,20 +346,21 @@ export function createApplication(definition: ApplicationDefinition): Applicatio
             }
         }, [ready, state, next, router])
 
-        const onSignIn = useCallback(
-            async (event: FormEvent<HTMLFormElement>) => {
-                event.preventDefault()
-
-                const form = new FormData(event.currentTarget)
+        /**
+         * The sign-in itself, as a plain function of an address and a password.
+         *
+         * Extracted so the designed screen can reach the real one without also
+         * inheriting a `<form>` to read a `FormData` out of. Two screens, one
+         * call — the alternative is a second copy of the pending flag, the
+         * failure wording and the redirect, which is how those three drift apart.
+         */
+        const signIn = useCallback(
+            async (email: string, password: string) => {
                 setPending(true)
                 setFailure(null)
 
                 try {
-                    await session.signIn(
-                        String(form.get('email') ?? ''),
-                        String(form.get('password') ?? ''),
-                    )
-
+                    await session.signIn(email, password)
                     router.replace(destinationAfterSignIn(next))
                 } catch (error) {
                     setFailure(describeSignInFailure(error))
@@ -310,6 +371,28 @@ export function createApplication(definition: ApplicationDefinition): Applicatio
             [next, router],
         )
 
+        const onSignIn = useCallback(
+            async (event: FormEvent<HTMLFormElement>) => {
+                event.preventDefault()
+
+                const form = new FormData(event.currentTarget)
+                await signIn(String(form.get('email') ?? ''), String(form.get('password') ?? ''))
+            },
+            [signIn],
+        )
+
+        if (definition.signInFlow === 'designed') {
+            return (
+                <CustomerSignIn
+                    onSignIn={signIn}
+                    failure={failure}
+                    pending={pending}
+                    notice={explanationFor(endedBecause, ready)}
+                    title={definition.signInTitle ?? definition.applicationLabel}
+                />
+            )
+        }
+
         return (
             <SignInForm
                 pending={pending}
@@ -317,6 +400,7 @@ export function createApplication(definition: ApplicationDefinition): Applicatio
                 endedBecause={endedBecause}
                 ready={ready}
                 subject={subject}
+                surface={definition.signInSurface ?? 'plain'}
                 onSignIn={onSignIn}
             />
         )
@@ -438,6 +522,7 @@ export function createApplication(definition: ApplicationDefinition): Applicatio
 
     return {
         session,
+        operations: applicationOperations,
         SessionProvider,
         ApplicationShell,
         SignInScreen,
@@ -456,6 +541,11 @@ export interface SignInFormProps {
     ready: boolean
     onSignIn: (event: FormEvent<HTMLFormElement>) => void | Promise<void>
     subject?: string
+    /**
+     * Which treatment to render. Defaults to `'plain'`, so an application that
+     * says nothing keeps the screen it has always had.
+     */
+    surface?: 'plain' | 'apple'
 }
 
 export function SignInForm({
@@ -465,18 +555,55 @@ export function SignInForm({
     ready,
     onSignIn,
     subject = 'end user',
+    surface = 'plain',
 }: SignInFormProps) {
     const explanation = explanationFor(endedBecause, ready)
+    const apple = surface === 'apple'
 
-    return (
-        <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-8 px-6 py-16">
-            <header className="flex flex-col gap-2">
-                <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-                <p className="text-slate-600 dark:text-slate-300">
-                    This is the {subject}&rsquo;s door. An account of any other type is not
-                    accepted here.
-                </p>
-            </header>
+    /*
+     * The two layouts, and only the two.
+     *
+     * Everything below the classes is identical in both — same fields, same
+     * order, same `autoComplete` values, same announced refusal, same privacy
+     * notice in the same place. The variant chooses a wrapper and a set of
+     * classes and changes nothing else, deliberately: a treatment that could
+     * reach a field would be a treatment that could change what the form means,
+     * and the whole reason the four applications share this component is that
+     * they cannot.
+     */
+    const content = (
+        <>
+            {apple && (
+                <header className="flex flex-col items-center gap-3 text-center">
+                    {/*
+                        The mark. Decorative and `aria-hidden`, because it carries
+                        no information the heading does not already carry — an
+                        announced image here would read the logo out as content.
+                    */}
+                    <span
+                        aria-hidden="true"
+                        className="flex size-14 items-center justify-center rounded-full bg-slate-900 text-lg font-semibold text-white shadow-lg shadow-slate-900/20 dark:bg-white dark:text-slate-900"
+                    >
+                        FM
+                    </span>
+                    <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+                        Welcome back
+                    </h1>
+                    <p className="max-w-xs text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                        Sign in to book a trusted pro, or track work already underway.
+                    </p>
+                </header>
+            )}
+
+            {!apple && (
+                <header className="flex flex-col gap-2">
+                    <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+                    <p className="text-slate-600 dark:text-slate-300">
+                        This is the {subject}&rsquo;s door. An account of any other type is not
+                        accepted here.
+                    </p>
+                </header>
+            )}
 
             {explanation !== null && <Alert tone="info">{explanation}</Alert>}
 
@@ -489,8 +616,9 @@ export function SignInForm({
                                 type: 'email',
                                 autoComplete: 'username',
                                 required: true,
-                                className:
-                                    'rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900',
+                                className: apple
+                                    ? 'w-full rounded-xl border border-slate-300/80 bg-white/80 px-4 py-3 text-slate-900 shadow-sm outline-none backdrop-blur-sm transition-colors placeholder:text-slate-400 focus:border-slate-900 focus:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-white dark:focus:border-white dark:focus:bg-slate-800'
+                                    : 'rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900',
                             })}
                         />
                     )}
@@ -507,9 +635,22 @@ export function SignInForm({
                     label="Password"
                     name="password"
                     autoComplete="current-password"
+                    className={
+                        apple
+                            ? 'w-full rounded-xl border border-slate-300/80 bg-white/80 px-4 py-3 text-slate-900 shadow-sm outline-none backdrop-blur-sm transition-colors focus:border-slate-900 focus:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-white dark:focus:border-white dark:focus:bg-slate-800'
+                            : undefined
+                    }
                 />
 
-                <Button type="submit" disabled={pending}>
+                <Button
+                    type="submit"
+                    disabled={pending}
+                    className={
+                        apple
+                            ? `w-full rounded-xl bg-slate-900 py-3 font-semibold text-white shadow-lg shadow-slate-900/20 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 ${APPLE_PRESS}`
+                            : undefined
+                    }
+                >
                     {pending ? 'Signing in…' : 'Sign in'}
                 </Button>
 
@@ -526,7 +667,33 @@ export function SignInForm({
                 with the thing the person came to do, and this one is on the same
                 screen either way.
             */}
-            <PrivacyNotice />
+            <PrivacyNotice
+                className={
+                    apple
+                        ? 'rounded-lg border border-slate-200/70 bg-white/50 px-4 py-3 text-xs text-slate-600 backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-800/50 dark:text-slate-400'
+                        : undefined
+                }
+            />
+        </>
+    )
+
+    if (apple) {
+        return (
+            <main
+                className={`flex min-h-screen w-full flex-col justify-center px-6 py-16 ${APPLE_GROUND}`}
+            >
+                <div className="mx-auto w-full max-w-md">
+                    <SignInSurface className="flex flex-col gap-8 p-8 sm:p-10">
+                        {content}
+                    </SignInSurface>
+                </div>
+            </main>
+        )
+    }
+
+    return (
+        <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-8 px-6 py-16">
+            {content}
         </main>
     )
 }

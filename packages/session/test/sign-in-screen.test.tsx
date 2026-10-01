@@ -105,3 +105,108 @@ describe('the sign-in screen', () => {
         )
     })
 })
+
+/**
+ * The floating treatment, and the boundary it must not cross.
+ *
+ * A variant is a *style* switch, so the property worth testing is not how it
+ * looks but what it is unable to change. Every test below is about the treatment
+ * leaving the form alone: the same fields, the same labels, the same password
+ * manager hints, the same refusal, the same notice. A restyle that quietly
+ * dropped `autocomplete` or moved the privacy notice would look finished and
+ * would break a password manager and a privacy claim at the same time.
+ */
+describe('the sign-in screen, on the floating surface', () => {
+    const onSurface = (overrides: Partial<Parameters<typeof SignInForm>[0]> = {}) =>
+        render({ surface: 'apple', ...overrides })
+
+    it('is a wrapper, not a different form', () => {
+        const html = onSurface()
+
+        // The accessible skeleton is identical to the plain screen's, because it
+        // is the same component with a different set of classes.
+        expect(html).toMatch(/<label[^>]*>Email address<\/label>/)
+        expect(html).toMatch(/<label[^>]*>Password<\/label>/)
+        expect(html).toMatch(/autocomplete="username"/i)
+        expect(html).toMatch(/autocomplete="current-password"/i)
+        expect(html).toContain('Show password')
+        expect(html).toContain('type="password"')
+    })
+
+    it('keeps the refusal assertive, and the notice after the form', () => {
+        // The two things that are easy to lose in a visual rewrite, and both
+        // were load-bearing: a polite refusal would let somebody finish typing
+        // before it was read, and a notice above the form competes with the thing
+        // they came to do.
+        const refused = onSurface({ failure: { kind: 'refused', message: 'Those details are not right.' } })
+
+        expect(refused).toContain('role="alert"')
+        expect(refused).toContain('Those details are not right.')
+        expect(onSurface()).toContain('aria-labelledby="privacy-notice-heading"')
+
+        const formAt = refused.indexOf('<form')
+        const alertAt = refused.indexOf('role="alert"')
+        expect(formAt).toBeGreaterThan(-1)
+        expect(alertAt).toBeGreaterThan(formAt)
+    })
+
+    it('still disables the button while the request is in flight', () => {
+        expect(onSurface({ pending: true })).toContain('disabled')
+        expect(onSurface({ pending: true })).toContain('Signing in')
+    })
+
+    it('applies the material treatment, and only in this variant', () => {
+        // `backdrop-blur` is the whole point of the surface, and it is what makes
+        // it translucency rather than a tinted rectangle. Asserted here because a
+        // restyle that dropped it would still render and still look deliberate.
+        expect(onSurface()).toContain('backdrop-blur-2xl')
+
+        // And the plain screen must not have gained it: the other three
+        // applications never asked for this treatment.
+        expect(render()).not.toContain('backdrop-blur-2xl')
+    })
+
+    it('answers the accessibility preferences rather than ignoring them', () => {
+        const html = onSurface()
+
+        // Reduced transparency goes near-opaque, not to "no background": a panel
+        // with nothing behind it is *less* legible, not more.
+        expect(html).toContain('prefers-reduced-transparency')
+        expect(html).toContain('prefers-contrast')
+
+        // Reduced motion drops the movement and keeps the feedback, so a press
+        // still answers.
+        expect(html).toContain('motion-reduce')
+    })
+
+    it('asks the typeface from a variable, so an application without it is unaffected', () => {
+        // The other three applications never load `--font-jakarta`. A bare family
+        // name would render in a fallback nobody chose; the variable with a
+        // system-ui fallback behind it is what makes this shared.
+        expect(onSurface()).toContain('var(--font-jakarta')
+    })
+
+    it('keeps the reveal control after the input, in either variant', () => {
+        // Tab order follows DOM order, and an eye icon before the field would be
+        // reached before the password — so a keyboard user would toggle the
+        // reveal before ever reaching the field. Asserted on both variants because
+        // a restyle is exactly when this would be tidied "into" the input.
+        for (const html of [render(), onSurface()]) {
+            expect(html.indexOf('type="password"')).toBeLessThan(html.indexOf('Show password'))
+        }
+    })
+
+    it('keeps the reveal control from submitting the form', () => {
+        // `type="button"`, asserted as the attribute rather than through a click:
+        // jsdom does not implement submission from a button, so a behavioural
+        // test passes with the attribute deleted. A submit-typed reveal would
+        // sign the person in with a half-typed password.
+        expect(onSurface()).toMatch(/type="button"[^>]*>Show password/)
+    })
+
+    it('keeps the mark out of the accessibility tree', () => {
+        // Decorative. Announced, it would read the logo out as content before the
+        // heading says anything.
+        expect(onSurface()).toContain('aria-hidden="true"')
+    })
+})
