@@ -42,6 +42,19 @@ export {
     SignInForm,
     ChangePasswordForm,
 } from './react/application'
+
+export { CustomerDashboard } from './react/customer/customer-dashboard'
+export { BookingDetails } from './react/customer/booking-details'
+export { MatchingResults } from './react/customer/matching-results'
+export {
+    MOCK_ACTIVE_JOB,
+    MOCK_BOOKING,
+    MOCK_CATEGORIES,
+    MOCK_FEATURED_WORKERS,
+    MOCK_MATCHES,
+    MOCK_SEARCH,
+    UNSUPPORTED_CUSTOMER_CLAIMS,
+} from './react/customer/mock-data'
 export type {
     Application,
     ApplicationDefinition,

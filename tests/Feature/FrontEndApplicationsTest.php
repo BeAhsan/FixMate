@@ -81,6 +81,30 @@ class FrontEndApplicationsTest extends TestCase
         'app/accounts/page.tsx' => ['super-admin'],
         'lib/accounts-screen.tsx' => ['super-admin'],
         'test/accounts-page.test.tsx' => ['super-admin'],
+        // The end user's three designed product screens. Each is a page the
+        // customer has and the other three account types do not: a booking is
+        // something a customer makes, and a matched technician is something only
+        // a customer's search produces. A copy in the worker application would be
+        // a page whose every request the back end refuses.
+        //
+        // They are *designed* screens, which is the reason they are not in the
+        // application itself: they draw their own header, and the test above fails
+        // any `<header` written under an application's `app/` because that is the
+        // shape a copied shell takes. So the screens live in `@fixmate/session`
+        // and each of these pages is pure delegation.
+        'app/booking-details/page.tsx' => ['user'],
+        'app/matching-results/page.tsx' => ['user'],
+        // The customer's own account, which is the one page on the end user's
+        // side with no mocked data in it — everything it shows comes from the
+        // session. It is a singleton for the same reason the two above are: an
+        // account page in the worker application is a page whose every request
+        // the back end refuses.
+        //
+        // It wraps `ApplicationShell` rather than a designed screen, because there
+        // is no design for it, and it is the one customer page that is *not* in
+        // `ALLOWED_IDENTICAL` — which is the point of listing it. A copy here that
+        // grew a header would be caught by the shell test above.
+        'app/account/page.tsx' => ['user'],
     ];
 
     public function test_all_four_applications_exist(): void

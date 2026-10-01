@@ -25,17 +25,27 @@ import { createApplication } from '@fixmate/session'
  */
 
 /**
+ * The navigation this door offers.
  *
- * The worker's own navigation. A worker holds `workers:*` and nothing else, so
- * nothing here is restricted — the sections are the worker's own work, not the
- * platform's.
+ * A worker holds `workers:*` and nothing else, so nothing here is restricted —
+ * what a worker reaches is the worker's own work, not the platform's.
+ *
+ * One entry, and that is not an oversight. `/jobs/`, `/availability/`,
+ * `/earnings/` and `/account/` were all here, and all four pointed at routes
+ * that have never existed — `apps/worker` has exactly one page, the dashboard.
+ * Nothing failed when they were removed: the shell renders whatever it is
+ * handed, so a navigation entry is not checked for a screen behind it by
+ * anything that builds.
+ *
+ * The four are recorded in `routes_not_yet_built` in `config/applications.php`
+ * rather than left here, so the intent that a worker will have a jobs screen
+ * survives its absence without a link that 404s standing in for it.
+ *
+ * `FrontEndNavigationResolvesTest` fails if an entry is added back without a
+ * page, and fails if a page is built without the entry being restored.
  */
 const sections = [
     { href: '/', label: 'Dashboard' },
-    { href: '/jobs/', label: 'Jobs' },
-    { href: '/availability/', label: 'Availability' },
-    { href: '/earnings/', label: 'Earnings' },
-    { href: '/account/', label: 'Account' },
 ]
 
 export const {

@@ -36,11 +36,30 @@ import { createApplication } from '@fixmate/session'
  * in `@fixmate/session` lists it under this application's key, and it is not
  * available to the other three because theirs do not.
  */
+/**
+ * The navigation this door offers.
+ *
+ * Two entries, and that is not an oversight.
+ *
+ * `/admins/` and `/audit/` were both here and both were reachable, because a
+ * super administrator's token carries `*` and `canReach` honours the wildcard —
+ * so unlike the gated entries in the other three applications, these two were
+ * links a signed-in super administrator could see and follow to a 404. They are
+ * recorded in `routes_not_yet_built` in `config/applications.php` rather than
+ * left here, so the intent survives without the broken links.
+ *
+ * `/accounts/` is gated behind `accounts:read` and does have a page. The gate is
+ * not doing anything for this account type — `*` satisfies everything — so it is
+ * documentation rather than control, and it is written as documentation: a
+ * reader can tell which entries this door will grow without comparing an ability
+ * list by hand.
+ *
+ * `FrontEndNavigationResolvesTest` fails if an entry is added back without a
+ * page, and fails if a page is built without the entry being restored.
+ */
 const sections = [
     { href: '/', label: 'Dashboard' },
     { href: '/accounts/', label: 'All accounts', requiredAbility: 'accounts:read' },
-    { href: '/admins/', label: 'Administrators', requiredAbility: 'accounts:promote' },
-    { href: '/audit/', label: 'Audit', requiredAbility: 'accounts:read' },
 ]
 
 export const {

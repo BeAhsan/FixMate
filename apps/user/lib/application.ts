@@ -32,7 +32,13 @@ import { createApplication } from '@fixmate/session'
  */
 const sections = [
     { href: '/', label: 'Dashboard' },
-    { href: '/bookings/', label: 'Bookings' },
+    // This is the booking *details* screen, because that is the only booking
+    // screen this application has — there is no list of bookings anywhere in the
+    // repository, no bookings table and no bookings route. So the label is a
+    // plural noun pointing at one booking, which is a small mismatch the design
+    // forced: the nav said "Bookings" and the only page to give it was this one.
+    // A link that resolved to nothing would be a worse mismatch.
+    { href: '/booking-details/', label: 'Bookings' },
     { href: '/account/', label: 'Account' },
     { href: '/accounts/', label: 'All accounts', requiredAbility: 'accounts:read' },
 ]

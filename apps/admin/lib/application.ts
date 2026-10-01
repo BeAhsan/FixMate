@@ -31,12 +31,40 @@ import { createApplication } from '@fixmate/session'
  * A section whose ability the live token does not carry is not rendered. The back end
  * refuses it either way; this is the courtesy, and the two are not the same thing.
  */
+/**
+ * The navigation this door offers.
+ *
+ * Two entries, and one of them is one an administrator can never be shown.
+ *
+ * `/bookings/`, `/workers/`, `/customers/` and `/reports/` were all here and
+ * all four pointed at routes that have never existed — `apps/admin` has exactly
+ * one page, the dashboard. Nothing failed when they were removed: the shell
+ * renders whatever it is handed, so a navigation entry is not checked for a
+ * screen behind it by anything that builds.
+ *
+ * The four are recorded in `routes_not_yet_built` in `config/applications.php`
+ * rather than left here, so the intent survives its absence without a link that
+ * 404s standing in for it.
+ *
+ * `/accounts/` is gated behind `accounts:read`, which an administrator does
+ * not hold — their token carries `admins:*`, and `AccountType::abilities()` says
+ * in its own comment that the `accounts:*` family is what an administrator is
+ * *not* given. So this entry is filtered out and never rendered. That is stated
+ * as a fact rather than left to be discovered: it is the one place in the
+ * repository where an entry names an ability its own account type is designed
+ * not to have, and a reader would reasonably take that for a mistake.
+ *
+ * Whether an administrator *should* be able to list accounts is a product
+ * question, and it is answered in `AccountType::abilities()` if it is answered
+ * anywhere — not here, by changing the ability a screen asks for. If it is
+ * answered there, this entry starts rendering, and there is still no page for
+ * it; that is then a gap, and this test is what reports it.
+ *
+ * `FrontEndNavigationResolvesTest` fails if an entry is added back without a
+ * page, and fails if a page is built without the entry being restored.
+ */
 const sections = [
     { href: '/', label: 'Dashboard' },
-    { href: '/bookings/', label: 'Bookings' },
-    { href: '/workers/', label: 'Workers' },
-    { href: '/customers/', label: 'Customers' },
-    { href: '/reports/', label: 'Reports' },
     { href: '/accounts/', label: 'All accounts', requiredAbility: 'accounts:read' },
 ]
 
