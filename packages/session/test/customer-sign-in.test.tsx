@@ -5,6 +5,7 @@ import {
     MOCKED_FEATURES,
     SUPPORTED_CLAIM,
     UNSUPPORTED_CLAIMS,
+    UNSUPPORTED_PERKS,
 } from '../src/react/customer-sign-in'
 
 /**
@@ -58,16 +59,15 @@ describe('the designed sign-in screen', () => {
     })
 
     it('tells the person holding the phone that the OTP is not connected', () => {
-        // The design's own sentence promises a code "via instant SMS &
-        // WhatsApp", and the button above reveals a field for a code that is
-        // never going to arrive. That is the worst of both — a promise made and
-        // then silently not kept — so the screen says so on the screen, not only
-        // in a comment.
+        // The design's own line says a code is "sent via SMS & WhatsApp", and the
+        // button above reveals a field for a code that is never going to arrive.
+        // That is the worst of both — a promise made and then silently not kept —
+        // so the screen says so on the screen, not only in a comment.
         const html = render()
 
         expect(html).toContain(MOCKED_FEATURES.otp)
-        // The design's sentence stays, as the intent it is.
-        expect(html).toContain('4-digit verification code')
+        // The design's line stays, as the intent it is.
+        expect(html).toContain('4-digit code sent via SMS')
     })
 
     it('relates the email toggle to the form it opens', () => {
@@ -131,20 +131,45 @@ describe('the designed sign-in screen', () => {
     it('does not link registration to a route that does not exist', () => {
         // A link to nowhere is a 404 with no explanation. Asserted as the
         // *absence* of an anchor, because "is it a span" is the property.
-        expect(render()).not.toMatch(/<a[^>]*>\s*Register Now/)
-        expect(render()).toContain('Register Now')
+        expect(render()).not.toMatch(/<a[^>]*>\s*Register/i)
+        expect(render()).toContain('Register as Homeowner')
+    })
+
+    it('has the hero the design puts above the card', () => {
+        // The revision before this had no hero at all: the mark, badge, greeting
+        // and subtitle were stacked inside the login card. The design moved them
+        // into a coloured banner of their own, which is why the card is now
+        // opaque — see the comment on it.
+        const html = render()
+
+        expect(html).toContain('Welcome Back, Homeowner')
+        expect(html).toContain('Smart Home Services')
+    })
+
+    it('has the perks strip, and records that its claims are unsupported', () => {
+        // "30-Day Re-service", "₹10,000 Cover" and "Zero Hidden Diagnostic Fees"
+        // describe a guarantee, an insurance product and a pricing policy. There
+        // is no warranty, no cover and no pricing model in this repository. They
+        // are rendered because the design draws them, and this is the record.
+        const html = render()
+
+        expect([...UNSUPPORTED_PERKS]).toEqual([
+            '30-Day Re-service',
+            '₹10,000 Cover',
+            'Zero Hidden Diagnostic Fees',
+        ])
+        for (const perk of UNSUPPORTED_PERKS) {
+            // `Zero Hidden Diagnostic Fees` is split across two elements in the
+            // design ("Zero Hidden" / "Diagnostic Fees"), so it is matched on its
+            // first line rather than the whole phrase.
+            const firstLine = perk.split(' ').slice(0, 2).join(' ')
+            expect(html).toContain(firstLine)
+        }
     })
 })
 
-describe('the trust badge', () => {
-    it('states the one claim this code can support', () => {
-        // True and checkable: the transport is TLS, and the password is never
-        // stored by this page.
-        expect(SUPPORTED_CLAIM).toBe('256-bit Encrypted')
-        expect(render()).toContain(SUPPORTED_CLAIM)
-    })
-
-    it('records the two claims it cannot, and renders neither', () => {
+describe('the claims on this screen', () => {
+    it('records the two the earlier revision cut, and renders neither', () => {
         // The privacy notice in this repository is held to a stricter rule: a
         // claim that cannot be substantiated is worse than no claim. The design
         // specified both of these and there is no verification feature and no
@@ -160,6 +185,16 @@ describe('the trust badge', () => {
         for (const claim of UNSUPPORTED_CLAIMS) {
             expect(html).not.toContain(claim)
         }
+    })
+
+    it('kept the one claim it could stand behind, even though the badge is gone', () => {
+        // "256-bit Encrypted" was true and checkable, so it survived every round
+        // of edits. The latest design revision dropped the whole trust badge, so
+        // it is no longer on the screen — and the export stays, because it is a
+        // record of what this screen is allowed to assert, and the privacy notice
+        // on this same screen asserts exactly this.
+        expect(SUPPORTED_CLAIM).toBe('256-bit Encrypted')
+        expect(render()).not.toContain(SUPPORTED_CLAIM)
     })
 })
 
@@ -197,24 +232,25 @@ describe('the email toggle', () => {
         // pressing it does, which is the only useful reading of a toggle.
         const html = render()
 
-        expect(html).toContain('Login with Email &amp; Password')
+        expect(html).toContain('Sign in with Password &amp; Email')
         expect(html).toMatch(/<button[^>]*type="button"/)
     })
 
-    it('puts both halves of the form inside the panel, in the design order', () => {
-        // The design's order is OTP card, divider, email row, providers. An
-        // earlier version put the divider above the providers and left the email
-        // form outside the panel entirely, which is a different screen.
+    it('orders the card as the design does: OTP, divider, providers, then the link', () => {
+        // The design puts the social row *above* the password link, both inside
+        // the card. An earlier revision had the link above the providers, and the
+        // providers outside the card entirely, which is a different screen.
         const html = render()
 
         const otpAt = html.indexOf('Get One-Time Password (OTP)')
-        const dividerAt = html.indexOf('or continue with')
-        const toggleAt = html.indexOf('Login with Email &amp; Password')
+        const dividerAt = html.indexOf('or sign in with')
         const googleAt = html.indexOf('Google')
+        const toggleAt = html.indexOf('Sign in with Password &amp; Email')
 
+        expect(otpAt).toBeGreaterThan(-1)
         expect(otpAt).toBeLessThan(dividerAt)
-        expect(dividerAt).toBeLessThan(toggleAt)
-        expect(toggleAt).toBeLessThan(googleAt)
+        expect(dividerAt).toBeLessThan(googleAt)
+        expect(googleAt).toBeLessThan(toggleAt)
     })
 
     it('keeps the OTP card and the toggle on screen together', () => {
@@ -229,6 +265,16 @@ describe('the email toggle', () => {
         const html = render()
 
         expect(html).toContain('Get One-Time Password (OTP)')
-        expect(html).toContain('Login with Email &amp; Password')
+        expect(html).toContain('Sign in with Password &amp; Email')
+    })
+
+    it('shows the email form only once the link has been pressed', () => {
+        // `aria-expanded="false"` *and* no form is the pair that matters: a
+        // control claiming to be collapsed while its content sits in the document
+        // is a lie to a screen reader, and the common way to write it.
+        const html = render()
+
+        expect(html).toContain('aria-expanded="false"')
+        expect(html).not.toContain('autocomplete="current-password"')
     })
 })

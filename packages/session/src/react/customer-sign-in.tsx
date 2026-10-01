@@ -8,7 +8,6 @@ import {
     Field,
     PasswordField,
     PrivacyNotice,
-    SignInSurface,
     fieldInputProps,
 } from '@fixmate/ui'
 
@@ -158,69 +157,47 @@ export function CustomerSignIn({
             </header>
 
             {/*
-                The typeface, asked for on the page rather than on the panel.
-                `SignInSurface` sets it too, but the header and the toggle below
-                the panel are siblings of that panel, not descendants — and a font
-                that only reached inside the card would leave the two most
-                prominent lines on the screen in the fallback. The same
-                `var(--font-jakarta, …)` with a system fallback, so the three
-                applications that never load it are unaffected.
+                The typeface, asked for on the page rather than on any one card.
+                The hero, the login card and the perks strip are siblings, and a
+                font that only reached inside one of them would leave the other
+                two in the fallback. The same `var(--font-jakarta, …)` with a
+                system fallback, so the three applications that never load it are
+                unaffected.
             */}
-            <main
-                className={`mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-8 [font-family:var(--font-jakarta,system-ui,-apple-system,sans-serif)]`}
-            >
-                <SignInSurface className="flex flex-col gap-6 p-5">
-                    {/* The mark, the badge, and the two lines of copy. */}
-                    <div className="flex flex-col items-center gap-3 text-center">
-                        <span
-                            aria-hidden="true"
-                            className="flex size-16 items-center justify-center rounded-full bg-emerald-900 text-white shadow-lg shadow-emerald-950/25 dark:bg-emerald-100 dark:text-emerald-950"
-                        >
-                            <ShieldIcon />
-                        </span>
+            <main className="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-6 [font-family:var(--font-jakarta,system-ui,-apple-system,sans-serif)]">
+                {/*
+                    The design's "Interactive Audience Mode Switcher" and its
+                    "Partner Transition Banner" are **not rendered**, and their
+                    absence is a decision rather than an omission.
 
-                        <p className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-4 py-1 text-[11px] font-bold uppercase leading-[14px] tracking-[0.55px] text-emerald-950 dark:bg-emerald-950/60 dark:text-emerald-100">
-                            <span
-                                aria-hidden="true"
-                                className="size-1.5 rounded-full bg-emerald-800 dark:bg-emerald-300"
-                            />
-                            FixMate Home Services
-                        </p>
+                    Both exist to move somebody from this door to the other one.
+                    This screen is the customer's, and it reaches only the
+                    operations this application was given; the worker is a
+                    separate application on a separate address, and its door
+                    refuses this account type. A switcher here would be a link out
+                    of the thing this repository is arranged to keep sealed, and a
+                    banner is that same link wearing different clothes.
 
-                        <h2 className="text-2xl font-bold leading-[30px] tracking-tight text-slate-900 dark:text-white">
-                            Welcome Back
-                        </h2>
+                    It would also cost the thing the screen exists for: the person
+                    standing here has already chosen, and asking them to choose
+                    again is noise above the fold.
+                */}
 
-                        <p className="text-sm leading-5 text-slate-600 dark:text-slate-400">
-                            Sign in to book a trusted professional, or track a repair already
-                            underway
-                        </p>
-                    </div>
+                <HeroBanner />
 
-                    {notice !== null && <Alert tone="info">{notice}</Alert>}
+                {notice !== null && <Alert tone="info">{notice}</Alert>}
 
-                    {/*
-                        The design's role switcher is gone, and its absence is the
-                        point rather than an omission.
+                {failure !== null && <Alert tone="error">{failure.message}</Alert>}
 
-                        It existed on a page whose job was to decide *which* door
-                        somebody was walking through. This screen is one door: the
-                        customer's. Keeping a control that says "I'm a Customer"
-                        asks the person standing here to choose the thing they have
-                        already chosen, and the second button is a link out of an
-                        application built so that a front end cannot cross into
-                        another account type's. Nothing here needs to know the
-                        worker's door exists.
-                    */}
-
-                    {/*
-                        The OTP card, and *then* everything else. The design's
-                        order is not the one this file had first: the divider sits
-                        between the OTP card and the email row, not above the
-                        provider buttons. Both halves of the form are therefore
-                        inside the panel, and the divider introduces the pair of
-                        them rather than the social pair.
-                    */}
+                {/*
+                    The login card. Opaque white rather than the translucent
+                    surface the previous revision used, because the design now puts
+                    a *coloured hero* above it: a frosted panel over a dark green
+                    banner and a pale ground at once is the stacked-translucency
+                    case the material guidance warns about, where legibility
+                    collapses. The depth comes from the hero's own shadow instead.
+                */}
+                <div className="flex flex-col gap-5 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70 dark:bg-slate-900/70 dark:ring-slate-700/60">
                     <OtpPanel
                         fieldId={otpFieldId}
                         requested={requested}
@@ -235,43 +212,14 @@ export function CustomerSignIn({
 
                     <div className="flex items-center gap-3" role="separator">
                         <span className="h-px flex-1 bg-indigo-100 dark:bg-slate-700" />
-                        <span className="text-[11px] font-bold uppercase tracking-[0.55px] text-slate-500 dark:text-slate-400">
-                            or continue with
+                        <span className="bg-white px-1 text-[11px] font-bold uppercase tracking-[0.55px] text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                            or sign in with
                         </span>
                         <span className="h-px flex-1 bg-indigo-100 dark:bg-slate-700" />
                     </div>
 
                     {/*
-                        The email row, as the design draws it: a full-width card
-                        with an icon tile and a chevron, which reads as "there is
-                        another way in here" rather than as a submit button. It is
-                        `aria-expanded` because it opens and closes a form, and a
-                        control that does that without saying so is a control whose
-                        effect a screen-reader user has to discover.
-                    */}
-                    <button
-                        type="button"
-                        onClick={() => setMethod(method === 'otp' ? 'email' : 'otp')}
-                        aria-expanded={method === 'email'}
-                        aria-controls="customer-sign-in-email"
-                        className={`flex w-full items-center gap-3 rounded-xl bg-white px-4 py-3 text-left shadow-sm ring-1 ring-slate-200/70 dark:bg-slate-900/70 dark:ring-slate-700/60 ${APPLE_PRESS}`}
-                    >
-                        <span
-                            aria-hidden="true"
-                            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100 text-emerald-900 dark:bg-emerald-950/70 dark:text-emerald-200"
-                        >
-                            <MailIcon />
-                        </span>
-                        <span className="flex-1 text-sm font-semibold text-slate-900 dark:text-white">
-                            {method === 'email' ? 'Hide email sign-in' : 'Login with Email & Password'}
-                        </span>
-                        <span aria-hidden="true" className="shrink-0 text-slate-400">
-                            {method === 'email' ? <ChevronUpIcon /> : <ChevronIcon />}
-                        </span>
-                    </button>
-
-                    {/*
-                        Both provider buttons are real buttons rather than links,
+                        Both provider buttons. Real buttons rather than links,
                         because each one is going to report that it is not built.
                         A link to a route that does not exist would be a 404 with
                         no explanation, which is the worse of the two failures.
@@ -283,52 +231,154 @@ export function CustomerSignIn({
                         </ProviderButton>
                         <ProviderButton onClick={() => setProviderRefusal(MOCKED_FEATURES.providers)}>
                             <AppleIcon />
-                            Apple
+                            Apple ID
                         </ProviderButton>
                     </div>
 
-                    {/* The refusal, announced. Assertive for the same reason the sign-in one is. */}
+                    {/* The refusal, announced. Assertive, as every refusal here is. */}
                     {providerRefusal !== null && (
                         <Alert tone="error">{providerRefusal}</Alert>
                     )}
 
-                    <p className="flex items-start gap-2 rounded-xl bg-indigo-50 px-3 py-2.5 text-[11px] font-bold leading-[14px] tracking-[0.44px] text-slate-600 dark:bg-slate-800/70 dark:text-slate-400">
-                        <span aria-hidden="true" className="mt-px shrink-0">
-                            <LockIcon />
+                    {/*
+                        The email row, as the design draws it: a quiet text link
+                        with a small key icon, not a card. It is `aria-expanded`
+                        because it opens and closes a form, and a control that does
+                        that without saying so is a control whose effect a
+                        screen-reader user has to discover.
+                    */}
+                    <button
+                        type="button"
+                        onClick={() => setMethod(method === 'otp' ? 'email' : 'otp')}
+                        aria-expanded={method === 'email'}
+                        aria-controls="customer-sign-in-email"
+                        className={`mx-auto flex items-center gap-2 text-xs font-semibold text-emerald-950 hover:underline dark:text-emerald-300 ${APPLE_PRESS}`}
+                    >
+                        <span aria-hidden="true" className="shrink-0">
+                            {method === 'email' ? <ChevronUpIcon /> : <KeyIcon />}
                         </span>
-                        {/*
-                            One claim, and it is the only one here that the code
-                            can stand behind. The design also specified "Verified
-                            Mistri Checks" and "Zero Spam Guarantee"; both are gone,
-                            because there is no verification feature and no
-                            anti-spam system in this repository to substantiate
-                            them. See `UNSUPPORTED_CLAIMS`.
-                        */}
-                        <span>256-bit Encrypted</span>
-                    </p>
+                        {method === 'email'
+                            ? 'Hide password sign-in'
+                            : 'Sign in with Password & Email'}
+                    </button>
+                </div>
 
-                    <p className="flex items-center justify-center gap-2 text-sm leading-5 text-slate-600 dark:text-slate-400">
-                        <span>Don&rsquo;t have a FixMate account?</span>
-                        {/*
-                            Not a link, and deliberately. There is no registration
-                            route, so this is the one control on the screen with
-                            nothing behind it at all. It is a `<span>` rather than
-                            an `<a href="#">`, because a link that goes nowhere is a
-                            promise the page cannot keep and a keyboard user can
-                            still focus.
-                        */}
-                        <span className="inline-flex items-center gap-1 font-semibold text-emerald-950 dark:text-emerald-300">
-                            Register Now
-                            <ArrowIcon />
-                        </span>
-                    </p>
+                <TrustPerks />
 
-                    <PrivacyNotice className="rounded-lg border border-slate-200/70 bg-white/50 px-4 py-3 text-xs text-slate-600 backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-800/50 dark:text-slate-400" />
-                </SignInSurface>
+                <p className="flex items-center justify-center gap-2 py-2 text-sm leading-5 text-slate-600 dark:text-slate-400">
+                    <span>Don&rsquo;t have an account?</span>
+                    {/*
+                        Not a link, and deliberately. There is no registration
+                        route, so this is the one control on the screen with
+                        nothing behind it at all. It is a `<span>` rather than an
+                        `<a href="#">`, because a link that goes nowhere is a
+                        promise the page cannot keep and a keyboard user can still
+                        focus.
+                    */}
+                    <span className="font-bold text-emerald-950 dark:text-emerald-300">
+                        Register as Homeowner
+                    </span>
+                </p>
+
+                <PrivacyNotice className="rounded-lg border border-slate-200/70 bg-white/50 px-4 py-3 text-xs text-slate-600 backdrop-blur-sm dark:border-slate-700/60 dark:bg-slate-800/50 dark:text-slate-400" />
             </main>
         </div>
     )
 }
+
+/**
+ * The hero: a dark green panel carrying the badge, the greeting and one line of
+ * copy, with two concentric ring outlines bleeding off its right edge.
+ *
+ * The rings are decoration and marked as such — an announced circle is noise
+ * before the badge has said anything. They are absolutely positioned inside a
+ * clipped frame, which is the only way to get the "half off the edge" look
+ * without the layout having to know about it.
+ */
+function HeroBanner() {
+    return (
+        <section className="relative flex flex-col gap-3 overflow-hidden rounded-xl bg-emerald-900 p-5 text-white shadow-lg shadow-emerald-950/20 dark:bg-emerald-950 dark:shadow-black/40">
+            <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -right-10 -top-9 size-36 rounded-full border border-white/25"
+            />
+            <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -right-2 top-6 size-20 rounded-full border border-white/20"
+            />
+
+            <p className="inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-300/20 px-2 py-0.5 text-[11px] font-bold uppercase leading-[14px] tracking-[0.55px] text-emerald-200">
+                <span aria-hidden="true" className="shrink-0">
+                    <SparkIcon />
+                </span>
+                Smart Home Services
+            </p>
+
+            <h2 className="text-2xl font-bold leading-[30px] tracking-[-0.6px]">
+                Welcome Back, Homeowner
+            </h2>
+
+            <p className="text-sm leading-[23px] text-teal-200">
+                Sign in to book a trusted professional, track active repairs and access your
+                warranties
+            </p>
+        </section>
+    )
+}
+
+/**
+ * The three perks, from the design's "FixMate Trust Perks Strip".
+ *
+ * **These are claims, and this code cannot support any of them.** "30-Day
+ * Re-service", "₹10,000 Cover" and "Zero Hidden Diagnostic Fees" describe a
+ * service guarantee, an insurance product and a pricing policy. There is no
+ * warranty, no cover, no pricing model and no booking entity in this repository
+ * — no table, no migration, no field.
+ *
+ * They are rendered because the design draws them and this screen is a faithful
+ * build of it, and they are named in {@link UNSUPPORTED_PERKS} so the removal is
+ * one edit. This is the same case as `UNSUPPORTED_CLAIMS` beside it, and the same
+ * judgement applies: the privacy notice in this repository is held to a stricter
+ * rule, and a claim that cannot be substantiated is worse than no claim. Cut
+ * these before this reaches anybody who could rely on them.
+ */
+export const UNSUPPORTED_PERKS = [
+    '30-Day Re-service',
+    '₹10,000 Cover',
+    'Zero Hidden Diagnostic Fees',
+] as const
+
+function TrustPerks() {
+    return (
+        <ul className="grid grid-cols-3 gap-2">
+            {PERKS.map((perk) => (
+                <li
+                    key={perk.title}
+                    className="flex flex-col items-start gap-1.5 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 dark:bg-slate-900/70 dark:ring-slate-700/60"
+                >
+                    <span
+                        aria-hidden="true"
+                        className="flex size-8 items-center justify-center rounded-full bg-emerald-300/30 text-emerald-800 dark:text-emerald-300"
+                    >
+                        {perk.icon}
+                    </span>
+                    <span className="text-[11px] font-bold leading-[14px] tracking-[0.44px] text-slate-900 dark:text-white">
+                        {perk.title}
+                    </span>
+                    <span className="text-[10px] leading-[13px] text-slate-600 dark:text-slate-400">
+                        {perk.note}
+                    </span>
+                </li>
+            ))}
+        </ul>
+    )
+}
+
+const PERKS = [
+    { icon: <RefreshIcon />, title: '30-Day Re-service', note: 'Free Guarantee' },
+    { icon: <ShieldIcon />, title: '₹10,000 Cover', note: 'Damage Protection' },
+    { icon: <ReceiptIcon />, title: 'Zero Hidden', note: 'Diagnostic Fees' },
+] as const
 
 /** The OTP half. Mocked end to end, and labelled as such. */
 function OtpPanel({
@@ -345,34 +395,51 @@ function OtpPanel({
     onCode: (value: string) => void
 }) {
     return (
-        <div className="flex flex-col gap-3 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70 dark:bg-slate-900/70 dark:ring-slate-700/60">
-            <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-2">
+            {/*
+                The label and the "Instant OTP" pill share a row, as the design
+                draws them. The pill is `aria-hidden`: it is a reassurance, not a
+                status, and announcing it before the field would be read would put
+                a decorative badge between the person and the thing they are
+                looking for.
+            */}
+            <div className="flex items-center justify-between gap-2">
                 <label
                     htmlFor={fieldId}
                     className="text-xs font-semibold text-slate-900 dark:text-white"
                 >
                     Mobile Number
                 </label>
-            </div>
-
-            <div className="flex gap-2">
-                {/*
-                    The country prefix. A `<span>` and not a select: choosing a
-                    country is a decision this screen cannot act on, because the
-                    number it would be sent to goes nowhere yet. It is drawn, and
-                    it is honest about being one value rather than a control — so
-                    it is `aria-hidden` and the phone field below carries the whole
-                    label. The chevron is part of that same honesty problem, and is
-                    left off for the same reason: a caret is a promise that
-                    something opens, and nothing does.
-                */}
                 <span
                     aria-hidden="true"
-                    className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-indigo-50 px-3 text-sm font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-emerald-200 px-2 py-0.5 text-[11px] font-semibold leading-[14px] tracking-[0.44px] text-emerald-900 dark:bg-emerald-300/20 dark:text-emerald-200"
                 >
-                    <FlagIcon />
-                    +92
+                    <span className="size-1.5 rounded-full bg-emerald-800 dark:bg-emerald-300" />
+                    Instant OTP
                 </span>
+            </div>
+
+            {/*
+                The phone field and its country prefix share one filled surface,
+                as the design draws them, rather than being two separate boxes. The
+                prefix is a `<span>` and not a select: choosing a country is a
+                decision this screen cannot act on, because the number it would be
+                sent to goes nowhere yet. It is `aria-hidden` and the phone field
+                carries the whole label. The design's chevron is left off for the
+                same reason — a caret is a promise that something opens, and nothing
+                does.
+            */}
+            <div className="flex items-center gap-3 rounded-xl bg-indigo-50 px-4 dark:bg-slate-800">
+                <span
+                    aria-hidden="true"
+                    className="flex shrink-0 items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-white"
+                >
+                    <FlagIcon />+91
+                </span>
+                <span
+                    aria-hidden="true"
+                    className="h-5 w-px shrink-0 bg-slate-300 dark:bg-slate-600"
+                />
                 <input
                     id={fieldId}
                     type="tel"
@@ -380,8 +447,8 @@ function OtpPanel({
                     autoComplete="tel-national"
                     name="phone"
                     required
-                    placeholder="300 1234567"
-                    className="min-w-0 flex-1 rounded-xl border border-transparent bg-indigo-50 px-4 text-slate-900 outline-none placeholder:text-slate-400 focus:border-emerald-900 focus:bg-white dark:bg-slate-800 dark:text-white dark:focus:border-white dark:focus:bg-slate-800"
+                    placeholder="98765 43210"
+                    className="min-w-0 flex-1 bg-transparent py-3 text-base font-semibold tracking-[0.45px] text-slate-900 outline-none placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-500 dark:text-white dark:placeholder:text-slate-400"
                 />
             </div>
 
@@ -412,29 +479,25 @@ function OtpPanel({
                 <ArrowIcon />
             </button>
 
-            <p className="flex items-start gap-2 text-xs leading-5 text-slate-600 dark:text-slate-400">
-                <span aria-hidden="true" className="mt-0.5 shrink-0">
+            <p className="flex items-start gap-2 text-xs leading-4 text-slate-600 dark:text-slate-400">
+                <span aria-hidden="true" className="mt-px shrink-0 text-emerald-800 dark:text-emerald-400">
                     <InfoIcon />
                 </span>
-                <span>
-                    We will send a 4-digit verification code via instant SMS &amp; WhatsApp.
-                </span>
+                <span>Instant 4-digit code sent via SMS &amp; WhatsApp</span>
             </p>
 
             {/*
                 The design's promise, and this repository's answer to it.
 
-                The line above says a code *will* be sent, and pressing the button
-                above reveals a field for a code that is never going to arrive —
-                which is the worst of both: a promise made and then silently not
-                kept. So the button says plainly that it is not connected, and the
-                design's own sentence stays as the intent it is.
+                The line above says a code is sent, and pressing the button above
+                reveals a field for a code that is never going to arrive — the worst
+                of both: a promise made and then silently not kept. So the screen
+                says plainly that it is not connected, and the design's own
+                sentence stays as the intent it is.
 
-                Delete this block, and the sentence's tense with it, when the OTP
-                route exists. It is the only place on this screen that admits a
-                feature is drawn rather than built, and it is here rather than in a
-                comment because the person who has to know is the person holding
-                the phone.
+                Delete this block, and nothing else, when the OTP route exists. It
+                is here rather than in a comment because the person who has to know
+                is the person holding the phone.
             */}
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
                 {MOCKED_FEATURES.otp}
@@ -539,13 +602,6 @@ function BackIcon() {
     )
 }
 
-function ChevronIcon() {
-    return (
-        <svg {...svg} width={16} height={16} aria-hidden="true">
-            <path d="M9 18l6-6-6-6" />
-        </svg>
-    )
-}
 
 function ChevronUpIcon() {
     return (
@@ -563,14 +619,6 @@ function ArrowIcon() {
     )
 }
 
-function MailIcon() {
-    return (
-        <svg {...svg} width={16} height={16} aria-hidden="true">
-            <rect x="2" y="4" width="20" height="16" rx="2" />
-            <path d="M22 7l-10 6L2 7" />
-        </svg>
-    )
-}
 
 function InfoIcon() {
     return (
@@ -581,14 +629,6 @@ function InfoIcon() {
     )
 }
 
-function LockIcon() {
-    return (
-        <svg {...svg} width={14} height={14} aria-hidden="true">
-            <rect x="4" y="10" width="16" height="11" rx="2" />
-            <path d="M8 10V7a4 4 0 018 0v3" />
-        </svg>
-    )
-}
 
 function FlagIcon() {
     return (
@@ -596,6 +636,41 @@ function FlagIcon() {
             <rect width="24" height="16" rx="2" fill="#01411C" />
             <path d="M0 4h24v2H0zM0 10h24v2H0z" fill="#fff" />
             <path d="M2.5 2.5l1 1.2-1 1.2 1 1.2-1 1.2 1 1.2-1 1.2 1 1.2-1 1.2" stroke="#fff" strokeWidth="0.8" />
+        </svg>
+    )
+}
+
+function SparkIcon() {
+    return (
+        <svg width={12} height={12} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2l2.4 6.2L21 10.5l-5.4 3.4L14 21l-4.2-5.6L3 12.6l6.2-3.4L12 2z" />
+        </svg>
+    )
+}
+
+function KeyIcon() {
+    return (
+        <svg {...svg} width={15} height={8} aria-hidden="true">
+            <circle cx="6" cy="4" r="3" />
+            <path d="M9 4h11M17 4v3M20 4v2" />
+        </svg>
+    )
+}
+
+function RefreshIcon() {
+    return (
+        <svg {...svg} width={14} height={14} aria-hidden="true">
+            <path d="M21 12a9 9 0 11-3-6.7" />
+            <path d="M21 4v5h-5" />
+        </svg>
+    )
+}
+
+function ReceiptIcon() {
+    return (
+        <svg {...svg} width={14} height={14} aria-hidden="true">
+            <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2V3z" />
+            <path d="M9 8h6M9 12h6" />
         </svg>
     )
 }
