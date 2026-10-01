@@ -54,4 +54,11 @@ export const {
     baseUrl: resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_URL),
     sections,
     subject: 'worker',
+    // The worker's door is built to its own design: a portal hero, a two-tab
+    // credential selector (mobile OTP / partner ID), a support hub, social-proof
+    // figures and a benefits grid. `plain` stays the default in
+    // `@fixmate/session`, so the customer, administrator and super administrator
+    // doors are untouched by this.
+    signInFlow: 'designed-worker',
+    signInTitle: 'Partner Sign In',
 })

@@ -27,6 +27,7 @@ import {
 } from 'react'
 import { createAccessTokenSource } from '../access-token-source'
 import { CustomerSignIn } from './customer-sign-in'
+import { WorkerSignIn } from './worker-sign-in'
 import {
     createApplicationClient,
     operationsFor,
@@ -128,17 +129,18 @@ export interface ApplicationDefinition<K extends ApplicationKey = ApplicationKey
      */
     signInSurface?: 'plain' | 'apple'
     /**
-     * The designed sign-in screen, for the end user's door.
+     * The designed sign-in screen, for a door whose design differs from the plain
+     * one.
      *
-     * Separate from {@link signInSurface} because it is not a style. The designed
-     * screen is a *different screen* — it leads with a one-time password and puts
-     * email behind a toggle — so choosing it is choosing a flow, and conflating
-     * that with a colour scheme would make the flag mean two things.
+     * Separate from {@link signInSurface} because it is not a style. A designed
+     * screen is a *different screen* — it leads with a one-time password, offers
+     * its own tabs, and may carry sections the plain screen has no room for — so
+     * choosing it is choosing a flow, and conflating that with a colour scheme
+     * would make the flag mean two things.
      *
-     * `'plain'` remains the default, so the worker, administrator and super
-     * administrator doors are untouched by this.
+     * `'plain'` remains the default, so any door that says nothing is untouched.
      */
-    signInFlow?: 'plain' | 'designed'
+    signInFlow?: 'plain' | 'designed' | 'designed-worker'
     /** The header title on the designed screen. */
     signInTitle?: string
     /** Where sign-in lives. A separate address, never a modal over a dashboard. */
@@ -380,6 +382,18 @@ export function createApplication<K extends ApplicationKey>(
             },
             [signIn],
         )
+
+        if (definition.signInFlow === 'designed-worker') {
+            return (
+                <WorkerSignIn
+                    onSignIn={signIn}
+                    failure={failure}
+                    pending={pending}
+                    notice={explanationFor(endedBecause, ready)}
+                    title={definition.signInTitle ?? definition.applicationLabel}
+                />
+            )
+        }
 
         if (definition.signInFlow === 'designed') {
             return (
