@@ -1,76 +1,67 @@
 /**
- * The mocked content behind the customer's three product screens.
+ * The one piece of mocked content left behind the customer's screens, and the
+ * record of everything the screens still claim that this repository cannot keep.
  *
- * ## Why this is a module and not a prop
+ * ## What moved out of here, and where it went
  *
- * Every value below describes something this repository does not have: a person
- * named Aarav, a locality, three technicians, their ratings, their review counts,
- * their base fees, a price estimate produced by an estimator that does not exist,
- * and a payment split that no payment system computes. It is one module rather
- * than three inline literals so that the moment any of it becomes real, the
- * change is visible in one place and the screens stop passing it in.
+ * This module used to hold five exported literals: the service categories, the
+ * featured technicians, the search the matching screen was answering, the three
+ * technicians it listed, and the whole booking. **All five now come from Laravel
+ * controllers** — `GET /users/discovery`, `GET /users/matching` and
+ * `GET /users/bookings/{booking}/quote` — because the user's instruction was that
+ * every screen be endpoint-driven, and a screen that reads a local module while
+ * its siblings read endpoints is a screen whose data will never be validated
+ * against anything.
  *
- * ## The honesty record
+ * They did not drift while they were here, which is worth recording as the reason
+ * it happened anyway. Two screens showing the same technician at two different
+ * ratings is exactly the sort of defect a shared module *cannot* prevent once the
+ * two screens have their own endpoints, and a shared fixture class in
+ * `app/Http/Controllers/Customer/CustomerFixture.php` is what does prevent it
+ * now. The costs went up and the risk went down.
  *
- * {@link UNSUPPORTED_CUSTOMER_CLAIMS} names every promise on these three screens
- * that no code here can keep, and a test asserts the list is complete — so a new
- * claim cannot reach a screen without somebody deciding to write it down. That is
- * the same arrangement as the customer's sign-in screen and the worker's, and it
- * exists because **a claim that cannot be substantiated is worse than no claim.**
+ * ## Why the trust badges stayed
  *
- * The two I would cut first are named here, because the others are at least
- * recognisably product copy:
+ * `MOCK_TRUST_BADGES` is the remainder, and it stayed for a reason rather than by
+ * accident. "Verified Mistris", "Transparent Pricing" and "Job Tracking" are three
+ * sentences about the business; there is no resource behind them, nothing changes
+ * when they are wrong, and an endpoint returning three strings would be a network
+ * round trip whose only effect is to make the marketing copy look load-bearing.
  *
- * - **"₹149 Base Fee" / "₹450 Total Payable"** — a price somebody agrees to pay,
- *   broken into a service fee, an estimated labour charge and "Platform Charges".
+ * An endpoint is for something that varies or something the server owns. These
+ * vary never and are owned by nobody.
+ *
+ * ## The honesty record, and the half of it that cannot be walked
+ *
+ * {@link UNSUPPORTED_CUSTOMER_CLAIMS} names every promise these screens make that
+ * no code here can keep, and two tests guard it in both directions: a claim on a
+ * screen that is not in the list fails, and an entry in the list that is no longer
+ * on a screen fails.
+ *
+ * **The list can no longer be derived from this module, and that is the point.**
+ * Most of these strings are written in a PHP controller now. A record that walked
+ * this file would have been trivially complete and completely blind, which is
+ * worse than no record — so the strings are written down *here*, by hand, and the
+ * tests render the screens and check that every one of them is really on a screen.
+ *
+ * That inverts the maintenance cost in the right direction: adding a claim to a
+ * screen now fails a test until somebody records it, rather than the record going
+ * stale in silence. Each of the three endpoint-backed screens says so on arrival
+ * as well — `MockedDataNotice` — so a screenshot carries the disclosure too.
+ *
+ * The claims I would cut first, because the others are at least recognisably
+ * product copy:
+ *
+ * - **"₹450 Total Payable"** — a price somebody agrees to pay, broken into a
+ *   service fee, an estimated labour charge and "Platform Charges". Nothing
+ *   computed any of the three.
  * - **"Every service is insured up to ₹10,000 for damages."** — an insurance
  *   product. A promise of cover is one a person may rely on when something goes
  *   wrong, and nothing here underwrites anything.
+ * - **"AI matching active in Sector 48, Gurugram"** — a live status line naming a
+ *   place and implying a matching run is happening now. There is no matcher, no
+ *   location on any model and no scheduled work in this repository.
  */
-
-/** The kinds of work the customer's dashboard offers, as the design lists them. */
-export const MOCK_CATEGORIES = [
-    { id: 'plumbing', label: 'Plumbing', priceFrom: 'From ₹149', tone: 'sky' },
-    { id: 'electrical', label: 'Electrical', priceFrom: 'From ₹129', tone: 'amber' },
-    { id: 'carpentry', label: 'Carpentry', priceFrom: 'From ₹199', tone: 'orange' },
-] as const
-
-/** The two technicians the dashboard's carousel shows, as the design draws them. */
-export const MOCK_FEATURED_WORKERS = [
-    { id: 'ramesh', name: 'Ramesh Kumar', trade: 'Plumber', rating: '4.8', jobs: '120 jobs' },
-    { id: 'suresh', name: 'Suresh Yadav', trade: 'Electrician', rating: '4.9', jobs: '98 jobs' },
-] as const
-
-/** The booking the dashboard's tracking card is following. */
-export const MOCK_ACTIVE_JOB = {
-    worker: 'Ramesh Kumar',
-    issue: 'Fixing kitchen sink leak',
-    eta: 'ETA 18 mins',
-    /**
-     * The four stages the design's tracker draws, in order.
-     *
-     * `reached` is the index the card is drawn at: 0 is Booked, 1 is On the way,
-     * 2 is In Progress, 3 is Completed. The design draws step 2 active, so that
-     * is the mocked position.
-     *
-     * There is no job, no status column and no event that could move this — the
-     * four states are a design's illustration of a lifecycle this repository does
-     * not model. So the tracker is drawn at a fixed position and the position is
-     * a number in a mock rather than a derived value, which is the whole of what
-     * makes it a mock.
-     */
-    stages: ['Booked', 'On the way', 'In Progress', 'Completed'] as const,
-    reached: 1,
-    /**
-     * The call link beside the technician, as the design draws it.
-     *
-     * A telephone number is not modelled anywhere — no worker table carries one
-     * and no route exposes it — so this is a button that goes nowhere. It is
-     * recorded rather than omitted, and see `ActiveJobCard` for why it is a
-     * button that refuses instead of an anchor to a dead `tel:`.
-     */
-    callLabel: 'Call technician',
-} as const
 
 /**
  * The three badges the dashboard's trust banner shows.
@@ -86,162 +77,21 @@ export const MOCK_TRUST_BADGES = [
     { id: 'tracking', label: 'Job Tracking' },
 ] as const
 
-/** The technician the booking-details screen is about. */
-export const MOCK_BOOKING = {
-    worker: 'Ramesh Kumar',
-    trade: 'Expert Plumber',
-    rating: '4.8',
-    service: 'Pipe Leakage Repair',
-    /**
-     * Three days, as the design draws them, with the first one selected.
-     *
-     * The design's first pill is "TODAY / 14 Oct" and the other two are "TUE /
-     * 15 Oct" and "WED / 16 Oct" — which is a design that has drifted, because
-     * "today" and the 14th cannot both be right on the same card. It is drawn as
-     * drawn, and the contradiction is recorded below rather than silently fixed,
-     * because deciding which one is true is a product question and not a
-     * rendering one.
-     */
-    dates: [
-        { weekday: 'TODAY', day: '14 Oct', selected: true },
-        { weekday: 'TUE', day: '15 Oct', selected: false },
-        { weekday: 'WED', day: '16 Oct', selected: false },
-    ],
-    /**
-     * Three slots, the second selected.
-     *
-     * These are `<button>`s, not links, and pressing one changes nothing: there
-     * is no booking, no appointment table and no way to reserve a slot. The
-     * selected state is drawn from the mock. See `SlotPicker` in
-     * booking-details.tsx.
-     */
-    times: [
-        { label: '09:00 AM', selected: false },
-        { label: '11:30 AM', selected: true },
-        { label: '02:00 PM', selected: false },
-    ],
-    /** The estimate, itemised. None of it is computed by anything. */
-    estimate: {
-        heading: 'AI Estimated Price',
-        /** The design's badge on the price card. */
-        badge: 'SECURE',
-        lines: [
-            { label: 'Base Service Fee', amount: '₹149' },
-            { label: 'Estimated Labor (45 min)', amount: '₹250' },
-            { label: 'Platform Charges', amount: '₹51' },
-        ],
-        total: '₹450',
-        totalLabel: 'Total Payable',
-        footnote: 'Actual price may vary slightly based on material used.',
-    },
-    /**
-     * Three ways to pay, the first selected.
-     *
-     * There is no payment integration in this repository — no gateway, no
-     * checkout, no order — so these are radio inputs that select nothing and a
-     * Confirm Booking button that books nothing. That is a larger gap than the
-     * rest of the mock and it is the first thing to build.
-     */
-    paymentMethods: [
-        {
-            id: 'upi',
-            title: 'UPI / QR / Wallets',
-            note: 'Google Pay, PhonePe, Paytm',
-            selected: true,
-        },
-        {
-            id: 'card',
-            title: 'Credit / Debit Cards',
-            note: 'Visa, Mastercard, RuPay',
-            selected: false,
-        },
-        {
-            id: 'cash',
-            title: 'Cash After Service',
-            note: 'Pay directly to the worker',
-            selected: false,
-        },
-    ],
-    /** The sticky footer's two halves, as the design draws them. */
-    footer: { totalLabel: 'Total', confirmLabel: 'Confirm Booking' },
-} as const
-
-/** The search the matching screen is answering. */
-export const MOCK_SEARCH = {
-    query: 'Plumber',
-    /** The design's echo of the query, with typographic quotes. */
-    searchingFor: 'Searching for “Plumber”',
-    /** How many the design says were found. */
-    found: '24 Found',
-    /** Where the matching is said to be running. */
-    area: 'Sector 48, Gurugram',
-    /** The sentence describing what was matched, as the design phrases it. */
-    recommendation:
-        'Based on your “Leaky Pipe Under Sink” request, we matched 3 master technicians with rapid dispatch toolsets.',
-    avgArrival: '22 mins',
-    estimatedCost: '₹350 – ₹500',
-    /**
-     * The four chips the design draws, the first one selected.
-     *
-     * Rendered as drawn and inert: there is no ranking, no distance, no price to
-     * sort by and no rating to sort on. See `FilterChips` in matching-results.tsx
-     * for why that is a recorded gap rather than a silent one.
-     */
-    filters: [
-        { label: 'AI Best Match', selected: true },
-        { label: 'Near Me', selected: false },
-        { label: 'Price: Low to High', selected: false },
-        { label: 'Top Rated', selected: false },
-    ],
-} as const
-
-/** The three technicians the matching screen lists. */
-export const MOCK_MATCHES = [
-    {
-        id: 'ramesh',
-        name: 'Ramesh Kumar',
-        summary: 'Master Plumber • 12 yrs exp',
-        baseFee: '₹149',
-        rating: '4.8',
-        reviews: '(120)',
-        distance: '1.2 km',
-        availability: 'Available Now',
-        action: 'Book Now',
-        bestMatch: true,
-    },
-    {
-        id: 'suresh',
-        name: 'Suresh Yadav',
-        summary: 'Plumbing & General Fix • 8 yrs exp',
-        baseFee: '₹129',
-        rating: '4.6',
-        reviews: '(84)',
-        distance: '2.8 km',
-        availability: 'Available: Today, 4:00 PM',
-        action: 'View Profile',
-        bestMatch: false,
-    },
-    {
-        id: 'mahesh',
-        name: 'Mahesh Chandra',
-        summary: 'Master Pipe & Sanitary • 15 yrs exp',
-        baseFee: '₹179',
-        rating: '4.9',
-        reviews: '(240)',
-        distance: '1.8 km',
-        availability: 'In 20 mins',
-        action: 'Book Now',
-        bestMatch: false,
-    },
-] as const
-
 /**
- * Everything on the customer's three screens that this repository cannot keep.
+ * Everything on the customer's screens that this repository cannot keep.
  *
  * Kept beside the screens rather than inside them so the record survives the
- * screens being rewritten. A test asserts this list matches what is rendered, so
- * removing a claim from a screen without removing it here fails rather than
- * passing quietly.
+ * screens being rewritten — and it has survived two rewrites now, the tracking
+ * card's claims moving to a controller and the rest following.
+ *
+ * **Every entry is asserted to be on a screen.** That is what makes this a record
+ * rather than a diary: a claim struck from the markup has to be struck from here
+ * in the same commit, so the list never tells the next reader that a price is
+ * still on screen when it is not.
+ *
+ * Most entries are now strings a Laravel controller writes. They are written down
+ * here anyway, which looks like duplication and is not: the controller is where
+ * the claim is made, and this is where somebody has to acknowledge making it.
  */
 export const UNSUPPORTED_CUSTOMER_CLAIMS = [
     // --- identity ---
@@ -251,8 +101,11 @@ export const UNSUPPORTED_CUSTOMER_CLAIMS = [
     'Plumbing',
     'Electrical',
     'Carpentry',
+    // The query `GET /users/matching` was asked. A bare noun standing for a
+    // search somebody made — and the walk below is what caught it coming back,
+    // because the heading and the "Searching for…" line both print it while the
+    // category labels no longer do.
     'Plumber',
-    'Electrician',
     // --- the search and its results ---
     'Searching for “Plumber”',
     'AI matching active in Sector 48, Gurugram',
@@ -275,11 +128,37 @@ export const UNSUPPORTED_CUSTOMER_CLAIMS = [
     'Master Plumber • 12 yrs exp',
     'Plumbing & General Fix • 8 yrs exp',
     'Master Pipe & Sanitary • 15 yrs exp',
+    // The same three trades on their own, because the discovery carousel and the
+    // booking card print the trade without the years. Recorded twice on purpose:
+    // the composed form is what the matching card says and the bare form is what
+    // the other two say, and a reader auditing a screenshot needs to find both.
+    'Master Plumber',
+    'Plumbing & General Fix',
+    'Master Pipe & Sanitary',
     'Expert Plumber',
     'Pipe Leakage Repair',
     'Ramesh Kumar',
     'Suresh Yadav',
     'Mahesh Chandra',
+    // The technician on the booking rather than among the browseable three. He is
+    // `WK-118` and no endpoint offers him for booking, which is why his absence
+    // from `/matching` is a decision rather than an omission.
+    'Imran Qureshi',
+    // --- the bookings list ---
+    // The second technician, on the one completed visit. `Sunita Deshmukh` is a
+    // person who did work, described in words this repository cannot support —
+    // there is no record of the visit, so the name and the date are invented.
+    'Sunita Deshmukh',
+    // The two status labels. A claim of the third kind from the honesty record's
+    // own taxonomy: a **live status line**. "In progress" says a visit is
+    // happening right now, and nothing here is happening.
+    'In progress',
+    'Completed',
+    // The two scheduled dates. Computed from `now()` when the request is made and
+    // therefore true of no particular visit at any particular time — a claim about
+    // when somebody is expecting somebody else.
+    '14 Nov 2026, 9:12 AM',
+    '11 Nov 2026, 4:40 PM',
     // --- prices ---
     'From ₹149',
     'From ₹129',
@@ -296,7 +175,7 @@ export const UNSUPPORTED_CUSTOMER_CLAIMS = [
     'Estimated Labor (45 min)',
     'Platform Charges',
     'Actual price may vary slightly based on material used.',
-    // --- ratings and job counts ---
+    // --- ratings and counts ---
     '4.8',
     '4.9',
     '4.6',
@@ -304,15 +183,7 @@ export const UNSUPPORTED_CUSTOMER_CLAIMS = [
     '(84)',
     '(240)',
     '120 jobs',
-    '98 jobs',
-    // --- the job tracker, which is a lifecycle this repository does not model ---
-    'ETA 18 mins',
-    'Fixing kitchen sink leak',
-    'Booked',
-    'On the way',
-    'In Progress',
-    'Completed',
-    'Call technician',
+    '240 jobs',
     // --- promises about the business, not about the screen ---
     'Verified Mistris',
     'Transparent Pricing',

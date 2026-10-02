@@ -38,6 +38,137 @@ const ACCESS_EXPIRES_AT = 1_000_000
 const RENEWAL_EXPIRES_AT = 9_000_000
 
 /**
+ * The two mocked customer bodies used by the operations tests below.
+ *
+ * Declared at module scope, next to the session fixtures, rather than inline in
+ * the test that needs them: they are contract fixtures in exactly the sense the
+ * session fixtures above are, and a schema that starts failing is easier to read
+ * against one named place than against a literal buried in an assertion.
+ *
+ * **Every field is present, including the nulls.** `phone` and `photo_url` are
+ * nullable rather than optional, so a body omitting them is refused rather than
+ * accepted — the difference between "the back end says there is none" and "the
+ * back end forgot", which is the same distinction the stage timestamps make.
+ */
+const TRACKING_BODY = {
+    booking_id: 'BK-2041',
+    status: 'on_the_way',
+    service: 'Kitchen sink leak',
+    worker: { id: 'WK-118', name: 'Imran Qureshi', phone: null, rating: 4.8, photo_url: null },
+    location: {
+        worker_lat: 12.9719,
+        worker_lng: 77.5946,
+        destination_lat: 12.9784,
+        destination_lng: 77.5912,
+        distance_km: 0.8,
+        eta_minutes: 5,
+    },
+    stages: [
+        { name: 'Accepted', completed: true, timestamp: '2026-10-02T09:00:00+00:00' },
+        { name: 'Arriving now', completed: false, timestamp: null },
+    ],
+}
+
+const SUGGESTIONS_BODY = {
+    suggestions: [
+        {
+            id: 'leak',
+            title: 'Leak or dripping pipe',
+            description: 'Water escaping from a joint or tap',
+            confidence: 0.92,
+            price_range: { min: 400, max: 900, currency: 'INR' },
+        },
+    ],
+    recommended: 'leak',
+}
+
+/**
+ * The remaining four bodies the route test needs.
+ *
+ * One per operation rather than a shared envelope, because the schemas are
+ * genuinely different shapes and a test that answered every route with one body
+ * would be testing that the client accepts whatever it is given. `bookingQuote`
+ * and `matching` in particular carry required arrays the schema checks element by
+ * element, so a `{ bookings: [] }` answer is refused with a field named in the
+ * message — which is the contract doing its job.
+ *
+ * `QUOTE_BODY` is trimmed to the fields the schema marks required. A full copy of
+ * the controller's payload would be a second source of truth for the endpoint,
+ * and this test is about the route and the schema, not about the estimate.
+ */
+const DIAGNOSIS_BODY = {
+    diagnosis: {
+        problem: 'Kitchen sink pipe leaking under the basin',
+        severity: 'medium',
+        possible_causes: ['Loose compression joint'],
+        recommended_solution: 'Replace the failed washer.',
+        estimated_time: '30-45 minutes',
+        price_estimate: { min: 400, max: 900, currency: 'INR' },
+        tools_needed: ['Adjustable spanner'],
+    },
+}
+
+const DISCOVERY_BODY = {
+    categories: [
+        { id: 'plumbing', label: 'Plumbing', price_from: 149, currency: 'INR' },
+    ],
+    featured_technicians: [
+        { id: 'WK-301', name: 'Ramesh Kumar', trade: 'Master Plumber', rating: 4.8, completed_jobs: 120 },
+    ],
+}
+
+const MATCHING_BODY = {
+    query: 'Plumber',
+    area: 'Sector 48, Gurugram',
+    found_count: 24,
+    summary: 'We matched 3 master technicians.',
+    average_arrival_minutes: 22,
+    estimated_cost: { min: 350, max: 500, currency: 'INR' },
+    filters: [{ id: 'ai-best-match', label: 'AI Best Match' }],
+    technicians: [
+        {
+            id: 'WK-301',
+            name: 'Ramesh Kumar',
+            trade: 'Master Plumber',
+            years_experience: 12,
+            base_fee: 149,
+            currency: 'INR',
+            rating: 4.8,
+            review_count: 120,
+            distance_km: 1.2,
+            availability: { label: 'Available Now', available_now: true },
+            best_match: true,
+        },
+    ],
+}
+
+const QUOTE_BODY = {
+    booking_id: 'BK-2041',
+    category: 'Plumbing',
+    service: 'Pipe Leakage Repair',
+    technician: { id: 'WK-118', name: 'Imran Qureshi', trade: 'Expert Plumber', rating: 4.8, review_count: 120 },
+    dates: [{ date: '2026-11-14', weekday: 'Sat', day_label: '14 Nov', is_today: true }],
+    times: [{ starts_at: '2026-11-14T09:00:00+05:30', label: '9:00 AM' }],
+    estimate: {
+        heading: 'AI Estimated Price',
+        badge: 'SECURE',
+        lines: [{ label: 'Base Service Fee', amount: 149 }],
+        total: 450,
+        total_label: 'Total Payable',
+        currency: 'INR',
+        footnote: 'Actual price may vary slightly based on material used.',
+    },
+    payment_methods: [{ id: 'upi', title: 'UPI / QR / Wallets', note: 'Google Pay' }],
+}
+
+const REGISTRATION_BODY = {
+    success: true,
+    message: 'Registration successful',
+    user: { id: 1, name: 'Aarav Sharma', email: 'aarav@example.test' },
+    token: 'mock-registration-abcdef0123456789',
+}
+
+/**
  * A sign-in response and a renewal response are *different shapes*, and the
  * first version of this file got that wrong. The client's declared schema
  * refused the fake with "does not match an object (data.token)", which is the
@@ -991,6 +1122,243 @@ describe('the operations an application is allowed to hold', () => {
         expect(OPERATIONS_BY_APPLICATION.worker).not.toHaveProperty('listAccounts')
         expect(OPERATIONS_BY_APPLICATION.admin).not.toHaveProperty('listAccounts')
         expect(OPERATIONS_BY_APPLICATION['super-admin']).toHaveProperty('listAccounts')
+    })
+
+    /**
+     * The customer application over a fetch that records and answers.
+     *
+     * Separate from the super-admin helper above because the return type is
+     * narrowed *per application key*: one helper over both keys would type its
+     * result as the union, where each member hides what the other holds, and the
+     * assertions below would be testing the helper rather than the map.
+     */
+    function customerOperations(body: unknown = { bookings: [] }) {
+        const requests: { url: string; authorization: string | null }[] = []
+        const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+            requests.push({
+                url: String(input),
+                authorization: new Headers(init?.headers).get('Authorization'),
+            })
+
+            return json(body)
+        })
+
+        const tokens = createAccessTokenSource()
+        const client = createApiClient({
+            baseUrl: BASE_URL,
+            fetch: fetchMock as unknown as typeof fetch,
+            getAccessToken: tokens.get,
+        })
+
+        return { operations: operationsFor(createOperations(client), 'user'), requests }
+    }
+
+    /**
+     * The eight mocked customer operations, pinned.
+     *
+     * Pinned rather than derived from the map, because the derived version of
+     * this test is the one that cannot fail: "every name in the map is bound" is
+     * exactly what the binding loop does, so asserting it proves the loop reads
+     * the map. **The three that mattered most were the ones a hand-written list
+     * would have left out** — `discovery`, `matching` and `bookingQuote` were
+     * added after this test was first written, and a list of five would have gone
+     * on passing through all three of them.
+     */
+    const CUSTOMER_OPERATIONS = [
+        'diagnosis',
+        'diagnosisSuggestions',
+        'tracking',
+        'bookings',
+        'register',
+        'discovery',
+        'matching',
+        'bookingQuote',
+    ] as const
+
+    it('binds all eight mocked customer operations for the end user application', async () => {
+        // The extras are bound by a loop over the entry rather than by eight
+        // hand-written conditionals, so this is the test that the loop covers the
+        // whole entry rather than the names somebody remembered. Each name is
+        // asserted to be a function, because the failure mode of the loop losing
+        // one is `undefined` rather than a build error: the map is cast on the
+        // way out, so a missing bind is invisible to TypeScript and reaches the
+        // screen as a click that throws.
+        const { operations } = customerOperations({ bookings: [] })
+
+        for (const name of CUSTOMER_OPERATIONS) {
+            expect(typeof operations[name], `${name} is not bound`).toBe('function')
+        }
+
+        /*
+         * And nothing beyond the pinned eight — scoped by excluding the five
+         * session operations every application holds, because `Object.keys` on the
+         * `user` entry returns thirteen names and comparing it to the customer
+         * eight would fail for the wrong reason. The first version of this line
+         * did exactly that, which is worth recording: **a failure that looks like
+         * "the map has extra keys" and is really "I forgot the session ones" is
+         * indistinguishable from a real leak unless you read the diff**, and the
+         * diff said `signIn`.
+         *
+         * What it guards is an unrecorded customer door. A ninth key on the `user`
+         * entry that is not one of the five session operations is a door only the
+         * end user can open, and the three assertions above cannot see it — they
+         * only check that the *named* eight are bound and that no *other*
+         * application has them.
+         *
+         * **This line, specifically, is the only one that can.** A ninth key
+         * pointing at an operation that does not exist takes the bind loop down
+         * with a `TypeError` first, which is a failure but an accidental one — it
+         * names the loop, not the extra door, and it disappears the moment the
+         * alias happens to point at something real. Pointing `shadowTracking` at
+         * `getTracking` leaves the loop perfectly happy, both session-operation
+         * assertions green and the three-door assertions silent, and this is the
+         * only assertion in the file that notices.
+         */
+        const sessionNames = new Set([
+            'signIn',
+            'renew',
+            'signOut',
+            'whoAmI',
+            'changePassword',
+        ])
+        const extras = Object.keys(OPERATIONS_BY_APPLICATION.user).filter(
+            (name) => !sessionNames.has(name),
+        )
+
+        expect(extras.sort()).toEqual([...CUSTOMER_OPERATIONS].sort())
+    })
+
+    it('reaches the real route behind each mocked customer operation', async () => {
+        // The URL is never written by hand, so it cannot drift — but only if the
+        // operation actually goes through the generated route. These assert the
+        // addresses, because a customer screen pointing at the wrong door is a
+        // 404 that reads as "the backend is not finished".
+        //
+        // Each call gets a body its own schema will accept. The first version of
+        // this test answered every route with `{ bookings: [] }` and the tracking
+        // call was refused with "booking_id: expected a string, received
+        // nothing" — which is the schema working: the operations are wired to
+        // different shapes, not to one shared envelope.
+        //
+        // **All eight are called, including the three newer ones.** `bookingQuote`
+        // is the reason this list cannot be derived from the keys above: it takes
+        // an argument, so a loop over `Object.keys` would call it with nothing and
+        // the test would fail on the schema rather than on the route.
+        const requests: string[] = []
+        const bodies: Record<string, unknown> = {
+            '/api/v1/identity/users/tracking': TRACKING_BODY,
+            '/api/v1/identity/users/diagnosis/suggestions': SUGGESTIONS_BODY,
+            '/api/v1/identity/users/bookings': { bookings: [] },
+            '/api/v1/identity/users/diagnosis': DIAGNOSIS_BODY,
+            '/api/v1/identity/users/discovery': DISCOVERY_BODY,
+            '/api/v1/identity/users/matching': MATCHING_BODY,
+            '/api/v1/identity/users/bookings/BK-2041/quote': QUOTE_BODY,
+            '/api/v1/identity/users/register': REGISTRATION_BODY,
+        }
+
+        const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input)
+            requests.push(url)
+
+            const path = url.slice(BASE_URL.length)
+
+            return new Response(JSON.stringify(bodies[path] ?? {}), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })
+        })
+
+        const operations = operationsFor(
+            createOperations(
+                createApiClient({
+                    baseUrl: BASE_URL,
+                    fetch: fetchMock as unknown as typeof fetch,
+                }),
+            ),
+            'user',
+        )
+
+        await operations.tracking()
+        await operations.diagnosisSuggestions()
+        await operations.bookings()
+        await operations.diagnosis()
+        await operations.discovery()
+        await operations.matching()
+        await operations.bookingQuote('BK-2041')
+        await operations.register({
+            name: 'Aarav Sharma',
+            email: 'aarav@example.test',
+            password: 'Passw0rd!Passw0rd!',
+        })
+
+        expect(requests).toEqual([
+            `${BASE_URL}/api/v1/identity/users/tracking`,
+            `${BASE_URL}/api/v1/identity/users/diagnosis/suggestions`,
+            `${BASE_URL}/api/v1/identity/users/bookings`,
+            `${BASE_URL}/api/v1/identity/users/diagnosis`,
+            `${BASE_URL}/api/v1/identity/users/discovery`,
+            `${BASE_URL}/api/v1/identity/users/matching`,
+            `${BASE_URL}/api/v1/identity/users/bookings/BK-2041/quote`,
+            `${BASE_URL}/api/v1/identity/users/register`,
+        ])
+    })
+
+    it('never binds a customer operation for the other three applications', () => {
+        // The whole reason the map exists. A worker's token would be refused by
+        // `account.can:users` on the server, so this is a second, front-end copy
+        // of a rule the back end already owns — and the copy is the one that
+        // fails *at build time* rather than in a browser.
+        //
+        // Asserted over the map rather than over three built operation sets,
+        // because the map is the single place the rule is written down. The
+        // compiled narrowing is checked by `npm run typecheck`, which refuses
+        // `operationsFor(ops, 'worker').tracking` outright.
+        for (const key of ['worker', 'admin', 'super-admin'] as const) {
+            for (const name of CUSTOMER_OPERATIONS) {
+                expect(OPERATIONS_BY_APPLICATION[key], `${key} can reach ${name}`).not.toHaveProperty(name)
+            }
+        }
+
+        for (const name of CUSTOMER_OPERATIONS) {
+            expect(OPERATIONS_BY_APPLICATION.user).toHaveProperty(name)
+        }
+    })
+
+    it('binds the five session operations for every application', () => {
+        // The extras loop skips the five session names by checking `key in
+        // session`. A session operation appearing twice — once from `session` and
+        // once rebound from `names` — would be a silent change of identity rather
+        // than a duplicate-key error, so this asserts the bound object for all
+        // four keys rather than only the customer one.
+        //
+        // `operationsFor` is reached through a widened reference on purpose: its
+        // return type is narrowed per key, so holding the four results in one
+        // variable would make the compiler drop whichever keys the *union* does
+        // not have. The property under test is about the object at run time, not
+        // about what four different types can express.
+        //
+        // The fetch is never called — nothing here awaits an operation — but the
+        // client refuses to be built without one.
+        const fetchMock = vi.fn() as unknown as typeof fetch
+        const bound = operationsFor as unknown as (
+            operations: ReturnType<typeof createOperations>,
+            application: 'user' | 'worker' | 'admin' | 'super-admin',
+        ) => Record<string, unknown>
+
+        const sessionNames = ['signIn', 'renew', 'signOut', 'whoAmI', 'changePassword'] as const
+
+        for (const key of ['user', 'worker', 'admin', 'super-admin'] as const) {
+            const operations = bound(
+                createOperations(createApiClient({ baseUrl: BASE_URL, fetch: fetchMock })),
+                key,
+            )
+
+            for (const name of sessionNames) {
+                expect(typeof operations[name], `${key}.${name} is not bound`).toBe('function')
+            }
+        }
+
+        expect(fetchMock).not.toHaveBeenCalled()
     })
 })
 })

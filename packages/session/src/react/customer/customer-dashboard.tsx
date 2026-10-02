@@ -1,13 +1,11 @@
 'use client'
 
+import type { Discovery, LiveTracking, TrackingStage } from '@fixmate/api-client'
 import { APPLE_PRESS } from '@fixmate/ui'
 import { usePathname } from 'next/navigation'
-import {
-    MOCK_ACTIVE_JOB,
-    MOCK_CATEGORIES,
-    MOCK_FEATURED_WORKERS,
-    MOCK_TRUST_BADGES,
-} from './mock-data'
+import { MockedDataNotice } from './mocked-data-notice'
+import { formatCount, formatMoneyFrom, formatRating } from './money'
+import { MOCK_TRUST_BADGES } from './mock-data'
 import { TabBar } from './tab-bar'
 import { JAKARTA_FONT_CLASS } from './typeface'
 import {
@@ -20,18 +18,39 @@ import {
     INK,
     INK_SOFT,
 } from './tokens'
+import { useMockedResource, type MockedResource } from './use-mocked-resource'
 
 /**
  * The customer's dashboard, built to the Figma frame.
  *
- * ## The one real input on this screen
+ * ## What is real on this screen
  *
  * `accountName`. The session knows who signed in, and the design greets somebody
- * by name, so the real name wins whenever there is one. Everything else on the
- * screen is mocked — a locality, three service categories with prices, two
- * featured technicians with ratings, and a job in progress with an ETA and a
- * four-stage lifecycle. All of it is in `UNSUPPORTED_CUSTOMER_CLAIMS` in
+ * by name, so the real name wins whenever there is one.
+ *
+ * ## Two of the mocked sections are now endpoints
+ *
+ * The job card reads `GET /users/tracking` and the categories and the featured
+ * technicians read `GET /users/discovery`, both handed in as loaders so this file
+ * imports no client and each section's three states can be rendered from plain
+ * objects. **What the endpoints return is still a literal** — no price was
+ * computed, nobody was ranked, nobody is moving — so the screen carries the same
+ * `MockedDataNotice` the other mocked screens do.
+ *
+ * What stays local is `MOCK_TRUST_BADGES`, and it stays local because it is
+ * marketing copy rather than a resource: "Verified Mistris", "Transparent Pricing"
+ * and "Job Tracking" are sentences about the business, there is nothing behind
+ * them to fetch, and an endpoint returning three strings would be a network round
+ * trip to deliver constants. Their claims are in `UNSUPPORTED_CUSTOMER_CLAIMS` in
  * mock-data.ts.
+ *
+ * ## Two sections, one request
+ *
+ * Both sections read the same endpoint, so `CustomerDashboard` fetches **once** and
+ * hands the same resource to both. Two `useMockedResource` calls would have been
+ * two requests for one payload, and the two sections would then be able to
+ * disagree about whether the endpoint works — a screen showing categories beside a
+ * carousel that says it could not be loaded.
  *
  * ## Why this is not wrapped in `ApplicationShell`
  *
@@ -48,14 +67,87 @@ import {
 export interface CustomerDashboardProps {
     accountName?: string | null
     location?: string | null
+    /**
+     * The mocked tracking endpoint, handed over rather than called here.
+     *
+     * The job card on this screen is one of the two parts that had an endpoint to
+     * read, so it reads one.
+     */
+    loadTracking?: () => Promise<LiveTracking>
+    /** The mocked discovery endpoint, behind the categories and the carousel. */
+    loadDiscovery?: () => Promise<Discovery>
 }
 
 export function CustomerDashboard({
     accountName,
     location,
+    loadTracking,
+    loadDiscovery,
 }: CustomerDashboardProps) {
     const pathname = usePathname()
+    const tracking = useMockedResource(
+        loadTracking ?? UNREACHABLE_TRACKING,
+        'dashboard-tracking',
+    )
+    const discovery = useMockedResource(
+        loadDiscovery ?? UNREACHABLE_DISCOVERY,
+        'dashboard-discovery',
+    )
 
+    return (
+        <CustomerDashboardScreen
+            accountName={accountName}
+            location={location}
+            pathname={pathname}
+            tracking={tracking}
+            discovery={discovery}
+        />
+    )
+}
+
+/**
+ * What a section does when the caller supplied no loader.
+ *
+ * Rejected promises rather than constants, and the distinction matters: these are
+ * the only parts of the screen that can fail, and a screen whose failure path was
+ * unreachable would be a screen whose failure path was never written.
+ * `describeResourceFailure` turns the rejection into the ordinary sentence, so a
+ * section shows its message like any other and a caller who forgot the loader sees
+ * a missing section rather than a silent `undefined` in the middle of the layout.
+ *
+ * Two functions rather than one shared, because the messages name what was
+ * missing. A caller who wired tracking and forgot discovery is told discovery was
+ * not supplied, which is a sentence that says what to do next.
+ */
+const UNREACHABLE_TRACKING = () =>
+    Promise.reject(new Error('The dashboard was rendered without a tracking loader.'))
+
+const UNREACHABLE_DISCOVERY = () =>
+    Promise.reject(new Error('The dashboard was rendered without a discovery loader.'))
+
+/**
+ * The screen, given its tracking state and its path.
+ *
+ * Split from the fetching for the same reason `LiveTrackingScreen` is: an effect
+ * never runs under `renderToStaticMarkup`, so a screen that only exists as a hook
+ * cannot be shown its resolved state in a test. `pathname` comes in as a prop too
+ * because `usePathname` needs Next's router context, which a static render does
+ * not have — so passing it makes this renderable, and passing it makes the tab bar
+ * testable at a chosen path rather than at whatever the router happens to say.
+ */
+export function CustomerDashboardScreen({
+    accountName,
+    location,
+    pathname,
+    tracking,
+    discovery,
+}: {
+    accountName?: string | null
+    location?: string | null
+    pathname: string
+    tracking: MockedResource<LiveTracking>
+    discovery: MockedResource<Discovery>
+}) {
     return (
         <div
             className={`flex min-h-screen flex-col ${GROUND} ${JAKARTA_FONT_CLASS}`}
@@ -99,15 +191,16 @@ export function CustomerDashboard({
             </header>
 
             <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-5 px-5 py-5 pb-24">
+                <MockedDataNotice />
                 <SearchAndPrompt />
                 <PriceEstimator />
-                <Categories />
-                <TopRated />
-                <ActiveJobCard />
+                <Categories categories={discovery} />
+                <TopRated technicians={discovery} />
+                <ActiveJobCard tracking={tracking} />
                 <TrustBanner />
             </main>
 
-            <TabBar currentPath={pathname ?? '/'} />
+            <TabBar currentPath={pathname} />
         </div>
     )
 }
@@ -240,35 +333,42 @@ function PriceEstimator() {
  * visual language on every platform; a letter in the design's own green reads as
  * a deliberate monogram instead of a missing icon.
  */
-function Categories() {
+function Categories({ categories }: { categories: MockedResource<Discovery> }) {
     return (
         <section className="flex flex-col gap-3">
             <h2 className={`text-lg font-bold ${INK}`}>
                 What do you need help with?
             </h2>
 
-            <div className="grid grid-cols-3 gap-2.5">
-                {MOCK_CATEGORIES.map((cat) => (
-                    <button
-                        key={cat.id}
-                        type="button"
-                        className={`flex flex-col items-start gap-2 p-3.5 text-left ${CARD} ${APPLE_PRESS}`}
-                    >
-                        <span
-                            aria-hidden="true"
-                            className="flex size-9 items-center justify-center rounded-xl bg-[#E8F7F4] text-sm font-bold text-[#0F5B55] dark:bg-[#12332E] dark:text-[#6FFBBE]"
-                        >
-                            {cat.label.charAt(0)}
-                        </span>
-                        <span className={`text-sm font-bold ${INK}`}>
-                            {cat.label}
-                        </span>
-                        <span className={`text-xs ${INK_SOFT}`}>
-                            {cat.priceFrom}
-                        </span>
-                    </button>
-                ))}
-            </div>
+            <ResourceBlock resource={categories} label="the service categories">
+                {(discovery) => (
+                    <div className="grid grid-cols-3 gap-2.5">
+                        {discovery.categories.map((category) => (
+                            <button
+                                key={category.id}
+                                type="button"
+                                className={`flex flex-col items-start gap-2 p-3.5 text-left ${CARD} ${APPLE_PRESS}`}
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    className="flex size-9 items-center justify-center rounded-xl bg-[#E8F7F4] text-sm font-bold text-[#0F5B55] dark:bg-[#12332E] dark:text-[#6FFBBE]"
+                                >
+                                    {category.label.charAt(0)}
+                                </span>
+                                <span className={`text-sm font-bold ${INK}`}>
+                                    {category.label}
+                                </span>
+                                <span className={`text-xs ${INK_SOFT}`}>
+                                    {formatMoneyFrom(
+                                        category.price_from,
+                                        category.currency,
+                                    )}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </ResourceBlock>
         </section>
     )
 }
@@ -285,7 +385,7 @@ function Categories() {
  * a different screen for a different query, not a list of everybody, so a link
  * labelled "See all" would land on something that is not all of anything.
  */
-function TopRated() {
+function TopRated({ technicians }: { technicians: MockedResource<Discovery> }) {
     return (
         <section className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
@@ -300,76 +400,185 @@ function TopRated() {
                 </button>
             </div>
 
-            <div className="-mx-5 flex snap-x snap-mandatory gap-3 overflow-x-auto px-5 pb-1">
-                {MOCK_FEATURED_WORKERS.map((w) => (
-                    <article
-                        key={w.id}
-                        className={`flex w-[168px] shrink-0 snap-start flex-col gap-2.5 p-3.5 ${CARD}`}
-                    >
-                        <div className="flex items-center gap-2.5">
-                            <span
-                                aria-hidden="true"
-                                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9] text-sm font-bold text-[#94A3B8] dark:bg-[#1A2438] dark:text-[#64748B]"
+            <ResourceBlock resource={technicians} label="the featured technicians">
+                {(discovery) => (
+                    <div className="-mx-5 flex snap-x snap-mandatory gap-3 overflow-x-auto px-5 pb-1">
+                        {discovery.featured_technicians.map((worker) => (
+                            <article
+                                key={worker.id}
+                                className={`flex w-[168px] shrink-0 snap-start flex-col gap-2.5 p-3.5 ${CARD}`}
                             >
-                                {w.name.charAt(0)}
-                            </span>
-                            <div className="min-w-0">
-                                <p className={`truncate text-sm font-bold ${INK}`}>
-                                    {w.name}
-                                </p>
-                                <p className={`truncate text-xs ${INK_SOFT}`}>
-                                    {w.trade}
-                                </p>
-                            </div>
-                        </div>
+                                <div className="flex items-center gap-2.5">
+                                    <span
+                                        aria-hidden="true"
+                                        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9] text-sm font-bold text-[#94A3B8] dark:bg-[#1A2438] dark:text-[#64748B]"
+                                    >
+                                        {worker.name.charAt(0)}
+                                    </span>
+                                    <div className="min-w-0">
+                                        <p
+                                            className={`truncate text-sm font-bold ${INK}`}
+                                        >
+                                            {worker.name}
+                                        </p>
+                                        <p
+                                            className={`truncate text-xs ${INK_SOFT}`}
+                                        >
+                                            {worker.trade}
+                                        </p>
+                                    </div>
+                                </div>
 
-                        <p
-                            className={`flex items-center gap-1 text-xs font-semibold ${INK_SOFT}`}
-                        >
-                            <span
-                                aria-hidden="true"
-                                className={AMBER_TEXT}
-                            >
-                                ★
-                            </span>
-                            <span className={INK}>{w.rating}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>{w.jobs}</span>
-                        </p>
+                                <p
+                                    className={`flex items-center gap-1 text-xs font-semibold ${INK_SOFT}`}
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className={AMBER_TEXT}
+                                    >
+                                        ★
+                                    </span>
+                                    <span className={INK}>
+                                        {formatRating(worker.rating)}
+                                    </span>
+                                    <span aria-hidden="true">·</span>
+                                    <span>
+                                        {formatCount(worker.completed_jobs)}{' '}
+                                        jobs
+                                    </span>
+                                </p>
 
-                        <button
-                            type="button"
-                            className={`mt-auto w-full rounded-xl px-3 py-2 text-xs font-bold ${ACTION} ${APPLE_PRESS}`}
-                        >
-                            Book
-                        </button>
-                    </article>
-                ))}
-            </div>
+                                <button
+                                    type="button"
+                                    className={`mt-auto w-full rounded-xl px-3 py-2 text-xs font-bold ${ACTION} ${APPLE_PRESS}`}
+                                >
+                                    Book
+                                </button>
+                            </article>
+                        ))}
+                    </div>
+                )}
+            </ResourceBlock>
         </section>
     )
+}
+
+/**
+ * One section's three states: loading, failed, and the data.
+ *
+ * ## Why a shared block and not three copies
+ *
+ * The dashboard now reads two endpoints and draws three mocked sections, so the
+ * loading and failure sentences would otherwise be written six times — and the
+ * point of `MockedDataNotice` is that a mocked screen says so in the same words
+ * everywhere. Two copies of that sentence is already one too many; the test that
+ * checks the notice is present on every mocked screen is the thing that catches a
+ * screen that forgot, and it cannot catch one that says it differently.
+ *
+ * `label` is what the failure sentence names, because "Something went wrong" on a
+ * dashboard with two independently-failing sections tells a person nothing about
+ * which part is missing. The reason itself is `resource.message`, which
+ * `useMockedResource` has already turned into a sentence — this block must not
+ * call `describeResourceFailure` again, because a second pass over an already
+ * rewritten message would find no `ApiError` in it and replace every specific
+ * answer with the generic one.
+ *
+ * The block renders no notice of its own. `MockedDataNotice` sits once at the top
+ * of the screen because it is a statement about the screen, not about a section:
+ * a reader who has scrolled past the top still needs to know, and four notices
+ * down the page would be four chances to have written the sentence differently.
+ */
+function ResourceBlock<T>({
+    resource,
+    label,
+    children,
+}: {
+    resource: MockedResource<T>
+    label: string
+    children: (data: T) => React.ReactNode
+}) {
+    if (resource.status === 'loading') {
+        return (
+            <p className={`text-sm ${INK_SOFT}`} role="status">
+                Loading {label}…
+            </p>
+        )
+    }
+
+    if (resource.status === 'failed') {
+        return (
+            <p className={`text-sm ${INK_SOFT}`} role="status">
+                {label} could not be loaded. {resource.message}
+            </p>
+        )
+    }
+
+    return <>{children(resource.data)}</>
 }
 
 /**
  * The job in progress, with the design's four-stage tracker.
  *
  * **The tracker is the most structurally misleading thing on this screen.** It is
- * a lifecycle — Booked, On the way, In Progress, Completed — drawn at a fixed
- * position, and there is no job, no status column, no driver location and no
- * event that could move it. A person watching this will believe somebody is
- * travelling to them. `ETA 18 mins` is the same claim in a number.
+ * a lifecycle — Accepted, On the way, Arriving now, Work completed — drawn at
+ * whatever position the response says, and there is no job, no status column, no
+ * driver location and no event that could move it. A person watching this will
+ * believe somebody is travelling to them. `ETA 5 min` is the same claim in a
+ * number.
  *
- * It is drawn because the design draws it, and both the stages and the ETA are in
- * the record. The position comes from `MOCK_ACTIVE_JOB.reached` — a number in a
- * mock — so there is nothing here that could compute a stage and get it wrong
- * later.
+ * It is drawn because the design draws it, and reading it from
+ * `GET /users/tracking` does not make it less misleading — the endpoint is a
+ * fixture too. What reading it does fix is that the position is now
+ * {@link reachedStage} over the response's own completion flags, rather than a
+ * number typed into a mock beside the four names it described. Two things can
+ * still be wrong here — the endpoint answering, and the flags agreeing with the
+ * timestamps — and both are somewhere a test can reach. Before, the third was not:
+ * the position and the stage names were separate constants that could contradict
+ * each other and render as a perfectly well-formed tracker.
+ *
+ * The screen it is drawn on carries no example-data notice, and that is a real gap
+ * rather than an oversight. The dedicated tracking screen does; this card does
+ * not, because a notice above a section the size of a receipt would be a different
+ * screen from the design's. The honest answer is that the card's claim is
+ * carried by `LiveTrackingController`'s docblock and by `MockedCustomerEndpointsTest`,
+ * and neither of those reaches somebody using the app — recorded here so the gap
+ * is a decision somebody made and not one nobody noticed.
  *
  * The step markers carry their state in three ways, not one: fill, a tick for
  * passed stages, and weight on the label. The tick is the load-bearing one for a
  * screen-reader user, since fill alone is invisible to them; it is `aria-hidden`
  * because the label beside it is what gets read.
  */
-function ActiveJobCard() {
+function ActiveJobCard({ tracking }: { tracking: MockedResource<LiveTracking> }) {
+    if (tracking.status === 'loading') {
+        return (
+            <section
+                aria-label="Active job"
+                className={`flex flex-col gap-4 p-5 ${CARD}`}
+            >
+                <p role="status" className={`text-sm ${INK_SOFT}`}>
+                    Loading your active job…
+                </p>
+            </section>
+        )
+    }
+
+    if (tracking.status === 'failed') {
+        // **Rendered in place, not omitted.** A card that disappears is a card
+        // somebody will not notice is missing, and the request really did fail.
+        // The message is here so the failure is visible where the content was.
+        return (
+            <section
+                aria-label="Active job"
+                className={`flex flex-col gap-4 p-5 ${CARD}`}
+            >
+                <p className={`text-sm ${INK_SOFT}`}>{tracking.message}</p>
+            </section>
+        )
+    }
+
+    const { worker, service, location, stages, status } = tracking.data
+
     return (
         <section className={`flex flex-col gap-4 p-5 ${CARD}`}>
             <div className="flex items-center justify-between gap-3">
@@ -383,32 +592,40 @@ function ActiveJobCard() {
                     Active Job
                 </span>
                 <span className={`text-xs font-semibold ${INK_SOFT}`}>
-                    {MOCK_ACTIVE_JOB.eta}
+                    {`ETA ${location.eta_minutes} min`}
                 </span>
             </div>
 
+            {/*
+              `status` is the back end's own word for the job's state, shown next
+              to the technician. It is deliberately *not* "Active Job" — that pill
+              above is this card's own heading, and rendering the same word twice
+              would hide the one that can change.
+            */}
             <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
                     <span
                         aria-hidden="true"
                         className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#F1F5F9] text-sm font-bold text-[#94A3B8] dark:bg-[#1A2438] dark:text-[#64748B]"
                     >
-                        {MOCK_ACTIVE_JOB.worker.charAt(0)}
+                        {worker.name.charAt(0)}
                     </span>
                     <div className="min-w-0">
                         <p className={`truncate text-sm font-bold ${INK}`}>
-                            {MOCK_ACTIVE_JOB.worker}
+                            {worker.name}
                         </p>
-                        <p className={`truncate text-xs ${INK_SOFT}`}>
-                            {MOCK_ACTIVE_JOB.issue}
-                        </p>
+                        <p className={`truncate text-xs ${INK_SOFT}`}>{service}</p>
                     </div>
                 </div>
 
-                <CallTechnician />
+                <CallTechnician name={worker.name} />
             </div>
 
-            <StageTracker />
+            <p className={`text-xs font-semibold uppercase tracking-wide ${INK_SOFT}`}>
+                {status.replace(/_/g, ' ')}
+            </p>
+
+            <StageTracker stages={stages} />
 
             <button
                 type="button"
@@ -442,11 +659,11 @@ function ActiveJobCard() {
  * that does nothing is inert; a `tel:` link puts a wrong number in front of
  * somebody's phone.
  */
-function CallTechnician() {
+function CallTechnician({ name }: { name: string }) {
     return (
         <button
             type="button"
-            aria-label={`Call ${MOCK_ACTIVE_JOB.worker}`}
+            aria-label={`Call ${name}`}
             className={`flex shrink-0 items-center gap-1.5 rounded-full bg-[#F0FBF8] px-3 py-2 text-xs font-semibold text-[#114B43] hover:bg-[#E3F5F0] dark:bg-[#12332E] dark:text-[#6FFBBE] dark:hover:bg-[#17403A] ${APPLE_PRESS}`}
         >
             <svg
@@ -462,7 +679,7 @@ function CallTechnician() {
             >
                 <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.13.96.36 1.9.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0122 16.92z" />
             </svg>
-            {MOCK_ACTIVE_JOB.callLabel}
+            Call
         </button>
     )
 }
@@ -480,22 +697,24 @@ function CallTechnician() {
  * elements, because the design's three segments are one line in three states and
  * three elements would need to be kept in step with the four markers by hand.
  */
-function StageTracker() {
+function StageTracker({ stages }: { stages: TrackingStage[] }) {
+    const reached = reachedStage(stages)
+
     return (
         <ol className="relative flex items-start justify-between gap-1 pt-1">
-            {MOCK_ACTIVE_JOB.stages.map((stage, index) => {
-                const done = index < MOCK_ACTIVE_JOB.reached
-                const active = index === MOCK_ACTIVE_JOB.reached
-                const upcoming = index > MOCK_ACTIVE_JOB.reached
+            {stages.map((stage, index) => {
+                const done = index < reached
+                const active = index === reached
+                const upcoming = index > reached
 
                 return (
                     <li
-                        key={stage}
+                        key={stage.name}
                         aria-current={active ? 'step' : undefined}
                         className="relative flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center first:items-start first:text-left last:items-end last:text-right"
                     >
                         {/* The connector, drawn behind the markers. */}
-                        {index < MOCK_ACTIVE_JOB.stages.length - 1 && (
+                        {index < stages.length - 1 && (
                             <span
                                 aria-hidden="true"
                                 className={`absolute left-1/2 top-[9px] h-0.5 w-full ${
@@ -544,13 +763,35 @@ function StageTracker() {
                                       : INK_SOFT
                             }`}
                         >
-                            {stage}
+                            {stage.name}
                         </span>
                     </li>
                 )
             })}
         </ol>
     )
+}
+
+/**
+ * Which stage the tracker is drawn at.
+ *
+ * The first stage the response has *not* completed — or the end, when every stage
+ * is done, so a finished job reads as finished rather than as the last stage
+ * still being approached.
+ *
+ * **This replaces `MOCK_ACTIVE_JOB.reached`, which was a number typed in beside
+ * the four stage names it described.** The two could disagree with each other and
+ * nothing would notice: moving `reached` to 2 would draw the third marker active
+ * while the comment above it still said the design draws step 2. Deriving it from
+ * the response means there is one thing to be right rather than two, and the
+ * function is exported so the derivation is testable on its own — it is the part
+ * that has to handle "all completed" and "none completed", and both are edge
+ * cases a render at one position would never reach.
+ */
+export function reachedStage(stages: TrackingStage[]): number {
+    const firstIncomplete = stages.findIndex((stage) => !stage.completed)
+
+    return firstIncomplete === -1 ? stages.length : firstIncomplete
 }
 
 /**

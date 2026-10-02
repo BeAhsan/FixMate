@@ -43,16 +43,39 @@ export {
     ChangePasswordForm,
 } from './react/application'
 
-export { CustomerDashboard } from './react/customer/customer-dashboard'
+/**
+ * The nine screens fed by the mocked customer endpoints.
+ *
+ * **Nine, and the count is asserted rather than described** —
+ * `mocked-customer-screens.test.tsx` renders every one of them and fails if the
+ * inventory there and this folder disagree. A screen added here without the
+ * `MockedDataNotice` is the failure that count exists for.
+ *
+ * Each takes its loader as a prop rather than importing one, for the reason the
+ * rest of this package is shaped the way it is: a component that built its own
+ * client would need an API address at module load, so it would be unloadable and
+ * untestable without one. Handed a function, each screen renders with no network
+ * at all — which is what makes a component test of the loading, failed and ready
+ * states possible without stubbing `fetch`.
+ */
+export { AiDiagnosis } from './react/customer/ai-diagnosis'
+export { LiveTracking } from './react/customer/live-tracking'
+export { CustomerRegistration } from './react/customer/customer-registration'
+export { MockedDataNotice } from './react/customer/mocked-data-notice'
+export { useMockedResource, describeResourceFailure } from './react/customer/use-mocked-resource'
+export type { MockedResource } from './react/customer/use-mocked-resource'
 export { BookingDetails } from './react/customer/booking-details'
-export { MatchingResults } from './react/customer/matching-results'
 export {
-    MOCK_ACTIVE_JOB,
-    MOCK_BOOKING,
-    MOCK_CATEGORIES,
-    MOCK_FEATURED_WORKERS,
-    MOCK_MATCHES,
-    MOCK_SEARCH,
+    CustomerBookings,
+    CustomerBookingsScreen,
+    BookingRows,
+    BookingRow,
+    hrefFor,
+} from './react/customer/booking-list'
+export { MatchingResults } from './react/customer/matching-results'
+export { CustomerDashboard } from './react/customer/customer-dashboard'
+export {
+    MOCK_TRUST_BADGES,
     UNSUPPORTED_CUSTOMER_CLAIMS,
 } from './react/customer/mock-data'
 export type {

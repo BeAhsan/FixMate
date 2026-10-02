@@ -20,6 +20,19 @@ import { APPLE_PRESS } from '@fixmate/ui'
  * `aria-current="page"` on the active tab is not decoration. The active tab is
  * marked by colour and weight in the design, and colour alone says nothing to
  * anybody who cannot see it.
+ *
+ * ## The middle tab pointed at the wrong page until there was a list to point at
+ *
+ * It read **Bookings** and pointed at `/booking-details/`, which is one booking —
+ * a plural tab delivering a singular, left in place because the page behind it
+ * looked finished. It now points at `/bookings/`, where `has_quote` decides which
+ * rows lead to the detail page and which do not.
+ *
+ * **`/booking-details/` is reachable from exactly one place**, and that is a
+ * reduction rather than a mistake. It has no tab of its own because it was never
+ * a section; it is a destination the bookings list links to. Adding it back as a
+ * fourth tab would put the same screen in two places in the navigation, which is
+ * how a person ends up not knowing which one to go to.
  */
 export interface TabBarProps {
     /** The path currently being shown, so one tab can be marked as current. */
@@ -28,7 +41,7 @@ export interface TabBarProps {
 
 const TABS = [
     { href: '/', label: 'Home' },
-    { href: '/booking-details/', label: 'Bookings' },
+    { href: '/bookings/', label: 'Bookings' },
     { href: '/account/', label: 'Profile' },
 ] as const
 

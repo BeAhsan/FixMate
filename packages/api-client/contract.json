@@ -8,8 +8,7 @@
     "",
     "route   the Laravel route name the function is generated from",
     "method  the HTTP verb the function must answer",
-    "path    the URL the function must produce, including the /api prefix",
-    "name    the operation name in packages/api-client/src/operations.ts"
+    "path    the URL the function must produce, including the /api prefix"
   ],
   "operations": [
     {
@@ -209,6 +208,54 @@
       "route": "products.index",
       "method": "get",
       "path": "/api/products"
+    },
+    {
+      "name": "getDiagnosis",
+      "route": "users.diagnosis",
+      "method": "get",
+      "path": "/api/v1/identity/users/diagnosis"
+    },
+    {
+      "name": "getDiagnosisSuggestions",
+      "route": "users.diagnosis.suggestions",
+      "method": "get",
+      "path": "/api/v1/identity/users/diagnosis/suggestions"
+    },
+    {
+      "name": "getTracking",
+      "route": "users.tracking",
+      "method": "get",
+      "path": "/api/v1/identity/users/tracking"
+    },
+    {
+      "name": "listBookings",
+      "route": "users.bookings",
+      "method": "get",
+      "path": "/api/v1/identity/users/bookings"
+    },
+    {
+      "name": "getDiscovery",
+      "route": "users.discovery",
+      "method": "get",
+      "path": "/api/v1/identity/users/discovery"
+    },
+    {
+      "name": "getMatching",
+      "route": "users.matching",
+      "method": "get",
+      "path": "/api/v1/identity/users/matching"
+    },
+    {
+      "name": "getBookingQuote",
+      "route": "users.bookings.quote",
+      "method": "get",
+      "path": "/api/v1/identity/users/bookings/{booking}/quote"
+    },
+    {
+      "name": "registerUser",
+      "route": "users.register",
+      "method": "post",
+      "path": "/api/v1/identity/users/register"
     }
   ]
 }

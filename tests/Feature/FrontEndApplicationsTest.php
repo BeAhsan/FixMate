@@ -94,6 +94,12 @@ class FrontEndApplicationsTest extends TestCase
         // and each of these pages is pure delegation.
         'app/booking-details/page.tsx' => ['user'],
         'app/matching-results/page.tsx' => ['user'],
+        // The bookings list, which is the fourth designed product screen and the
+        // one the other two above are reached *from* — `has_quote` on each row
+        // decides whether that row is an anchor, so the list is the navigation and
+        // the detail page is a destination. A copy in the worker application would
+        // list bookings every request of which `account.can:users` refuses.
+        'app/bookings/page.tsx' => ['user'],
         // The customer's own account, which is the one page on the end user's
         // side with no mocked data in it — everything it shows comes from the
         // session. It is a singleton for the same reason the two above are: an
@@ -105,6 +111,20 @@ class FrontEndApplicationsTest extends TestCase
         // `ALLOWED_IDENTICAL` — which is the point of listing it. A copy here that
         // grew a header would be caught by the shell test above.
         'app/account/page.tsx' => ['user'],
+        // The screens fed by the mocked customer endpoints, for the same
+        // reason the two above are singletons: a diagnosis, a tracking view and a
+        // registration form are all things a customer has and the other three
+        // account types do not, and a copy in the worker application would be a
+        // page whose every request `account.can:users` refuses.
+        //
+        // Listed here rather than written for all four applications on purpose.
+        // The customer screens are drawn to designs and there is no worker,
+        // administrator or super administrator design for them, so an identical
+        // copy in three more applications would be four screens to keep in step
+        // and three of them with nothing behind them.
+        'app/diagnosis/page.tsx' => ['user'],
+        'app/tracking/page.tsx' => ['user'],
+        'app/register/page.tsx' => ['user'],
     ];
 
     public function test_all_four_applications_exist(): void
@@ -219,6 +239,26 @@ class FrontEndApplicationsTest extends TestCase
             'renewSessionUser', 'renewSessionWorker', 'renewSessionAdmin', 'renewSessionSuperAdmin',
             'signOutUser', 'signOutWorker', 'signOutAdmin', 'signOutSuperAdmin',
             'currentUser', 'currentWorker', 'currentAdmin', 'currentSuperAdmin',
+            // The eight mocked customer operations, added to this list when the
+            // customer screens were built.
+            //
+            // **They belong here for the same reason the sixteen above do, and
+            // they are the harder half.** `getDiagnosis` and the rest are named
+            // only by the customer application's entry in `OPERATIONS_BY_APPLICATION`,
+            // so an application naming one itself would be reaching around the
+            // narrowing that exists to stop exactly that — and because the name is
+            // not an account-type prefix, this list has to be extended by hand when
+            // one is added. Left out, the omission would be invisible: the code
+            // would compile, the operation would be reachable from the wrong door,
+            // and only `account.can` would notice, in a browser, at run time.
+            //
+            // `getBookingQuote` is the only one of the eight whose route takes a
+            // path parameter, so the mistake it invites is a page building a URL
+            // by string concatenation instead of calling it. That is exactly why
+            // the generated function is the only thing that knows how the path is
+            // spelled — see `definitions.getBookingQuote` in @fixmate/api-client.
+            'getDiagnosis', 'getDiagnosisSuggestions', 'getTracking', 'listBookings', 'registerUser',
+            'getDiscovery', 'getMatching', 'getBookingQuote',
         ];
 
         foreach ($this->applicationSourceFiles() as $application => $files) {

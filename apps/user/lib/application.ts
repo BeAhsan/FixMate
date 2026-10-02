@@ -45,6 +45,21 @@ const sections = [
 
 export const {
     session,
+    /**
+     * The five operations bound to *this* application's door.
+     *
+     * Exported because the three mocked customer screens need loaders and an
+     * application is not allowed to build its own client. The narrowing is the
+     * point: this object has `tracking` and `bookings` and `register` in its
+     * type, and the other three applications' equivalent objects have none of
+     * them — so naming one of these from a worker page is a build error rather
+     * than a 403.
+     *
+     * Nothing here names an operation by its route name. That mapping lives in
+     * `OPERATIONS_BY_APPLICATION` inside `@fixmate/session`, and an application
+     * naming one itself is what `FrontEndApplicationsTest` fails.
+     */
+    operations,
     SessionProvider,
     ApplicationShell,
     SignInScreen,

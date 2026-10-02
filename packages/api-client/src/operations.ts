@@ -29,6 +29,16 @@ import {
     me as meSuperAdmin,
     resetPassword as resetPasswordSuperAdmin,
 } from './generated/routes/super-admins'
+import {
+    diagnosis as diagnosisRoute,
+    tracking as trackingRoute,
+    bookings as bookingsRoute,
+    discovery as discoveryRoute,
+    matching as matchingRoute,
+    register as registerUserRoute,
+} from './generated/routes/users'
+import { suggestions as diagnosisSuggestionsRoute } from './generated/routes/users/diagnosis'
+import { quote as bookingQuoteRoute } from './generated/routes/users/bookings'
 import { change as changePasswordUserRoute } from './generated/routes/users/password'
 import { change as changePasswordWorkerRoute } from './generated/routes/workers/password'
 import { change as changePasswordAdminRoute } from './generated/routes/admins/password'
@@ -601,6 +611,578 @@ const signOutResponse: Schema<{ data: SignOutResult }> = object({
     }),
 })
 
+/**
+ * A rupee range, as two integers and a currency code.
+ *
+ * No symbol and no decimals, because nothing here is computed and a formatted
+ * string cannot be formatted a second time at the point of display. The currency
+ * is `INR` in every one of these payloads rather than a formatted `₹…`, so a
+ * caller formats the number and the symbol lives in one place in the front end
+ * rather than in four payloads and four format strings.
+ */
+export interface MoneyRange {
+    min: number
+    max: number
+    currency: string
+}
+
+const moneyRange: Schema<MoneyRange> = object({
+    min: number(),
+    max: number(),
+    currency: string(),
+})
+
+/**
+ * The mocked AI diagnosis for a described problem.
+ *
+ * **Every field is a literal in `DiagnosisController`.** Nothing here is derived
+ * from a description: the controller takes no input, so no model, estimator or
+ * classifier runs behind this. The screen it feeds is written against the shape,
+ * and the shape is the thing being built — so these types describe a fixture, not
+ * a capability, and a screen that presents `confidence` as a probability is
+ * presenting a number nobody computed.
+ */
+export interface Diagnosis {
+    problem: string
+    severity: string
+    possible_causes: string[]
+    recommended_solution: string
+    estimated_time: string
+    price_estimate: MoneyRange
+    tools_needed: string[]
+}
+
+/** The diagnosis, wrapped — the back end answers `{ "diagnosis": { … } }`. */
+export interface DiagnosisResult {
+    diagnosis: Diagnosis
+}
+
+const diagnosisResult: Schema<DiagnosisResult> = object({
+    diagnosis: object({
+        problem: string(),
+        severity: string(),
+        possible_causes: array(string()),
+        recommended_solution: string(),
+        estimated_time: string(),
+        price_estimate: moneyRange,
+        tools_needed: array(string()),
+    }),
+})
+
+/**
+ * One of the categories a mocked diagnosis can be, and the response as a whole.
+ *
+ * `recommended` names a `suggestions[].id` rather than implying one by position,
+ * so a client cannot read the wrong entry after the list is reordered. It is
+ * still a choice made in the controller rather than a ranking: there is no score
+ * behind `confidence` either.
+ */
+export interface DiagnosisSuggestion {
+    id: string
+    title: string
+    description: string
+    confidence: number
+    price_range: MoneyRange
+}
+
+export interface DiagnosisSuggestions {
+    suggestions: DiagnosisSuggestion[]
+    recommended: string
+}
+
+const diagnosisSuggestions: Schema<DiagnosisSuggestions> = object({
+    suggestions: array(
+        object({
+            id: string(),
+            title: string(),
+            description: string(),
+            confidence: number(),
+            price_range: moneyRange,
+        }),
+    ),
+    recommended: string(),
+})
+
+/**
+ * The mocked live position of a technician travelling to a booking.
+ *
+ * **`location`, `distance_km` and `eta_minutes` describe a journey that is not
+ * happening.** The coordinates are two fixed points, the distance and the ETA are
+ * literals, and nothing polls this endpoint or moves anything between calls — so a
+ * screen that draws a map from these numbers draws a technician standing still in
+ * one place forever. They are typed and validated anyway, because the screen has
+ * to be built against something, and a shape that is honest about being a fixture
+ * is cheaper to replace than a guess at what the real one will send.
+ *
+ * `stages` repeats each stage with its own `completed` flag rather than leaving
+ * a client to derive it from a single index, so a future stage carries a null
+ * `timestamp` and the two cannot disagree inside one payload.
+ */
+export interface TrackingWorker {
+    id: string
+    name: string
+    phone: string | null
+    rating: number
+    photo_url: string | null
+}
+
+export interface TrackingLocation {
+    worker_lat: number
+    worker_lng: number
+    destination_lat: number
+    destination_lng: number
+    distance_km: number
+    eta_minutes: number
+}
+
+export interface TrackingStage {
+    name: string
+    completed: boolean
+    timestamp: string | null
+}
+
+export interface LiveTracking {
+    booking_id: string
+    status: string
+    service: string
+    worker: TrackingWorker
+    location: TrackingLocation
+    stages: TrackingStage[]
+}
+
+const liveTracking: Schema<LiveTracking> = object({
+    booking_id: string(),
+    status: string(),
+    service: string(),
+    worker: object({
+        id: string(),
+        name: string(),
+        phone: nullable(string()),
+        rating: number(),
+        photo_url: nullable(string()),
+    }),
+    location: object({
+        worker_lat: number(),
+        worker_lng: number(),
+        destination_lat: number(),
+        destination_lng: number(),
+        distance_km: number(),
+        eta_minutes: number(),
+    }),
+    stages: array(
+        object({
+            name: string(),
+            completed: boolean(),
+            timestamp: nullable(string()),
+        }),
+    ),
+})
+
+/**
+ * One mocked booking, and the list of them.
+ *
+ * **Nothing in the list belongs to the account whose token presented it.** Two
+ * fixed bookings come back for every customer, with timestamps relative to the
+ * moment of the request. A screen that renders this looks correct to whoever
+ * wrote it and is wrong to everybody, which is why the field the real response
+ * will hinge on — whose booking this is — is the one thing absent from it.
+ *
+ * `bookings` is always an array with no pagination envelope, so a caller renders
+ * a list in both the populated and the empty case.
+ *
+ * ## The three fields beside the machine ones
+ *
+ * `status`, `scheduled_at` and whether a detail page exists are all facts about
+ * the booking, and all three would otherwise be a decision handed to whichever
+ * screen renders this list. `status_label`, `scheduled_on` and `has_quote` carry
+ * them as values, so a caller can still branch on `status` and nobody has to
+ * rebuild a phrase from an underscore.
+ *
+ * **`has_quote` is required, and a missing one is a schema failure rather than a
+ * default of `false`.** A screen cannot tell "this booking has no quote" from
+ * "this payload predates the field", and defaulting would make the second one
+ * render as the first — a row that cannot be opened, for no reason a reader could
+ * see. The same reason `phone` and `photo_url` are nullable rather than optional
+ * in the tracking payload.
+ */
+export interface Booking {
+    id: string
+    service: string
+    status: string
+    status_label: string
+    worker_name: string
+    scheduled_at: string
+    scheduled_on: string
+    price: number
+    currency: string
+    has_quote: boolean
+}
+
+export interface BookingList {
+    bookings: Booking[]
+}
+
+const bookingList: Schema<BookingList> = object({
+    bookings: array(
+        object({
+            id: string(),
+            service: string(),
+            status: string(),
+            status_label: string(),
+            worker_name: string(),
+            scheduled_at: string(),
+            scheduled_on: string(),
+            price: number(),
+            currency: string(),
+            has_quote: boolean(),
+        }),
+    ),
+})
+
+/**
+ * What a registration attempt echoes back.
+ *
+ * **It creates no account, and `token` is not a credential.** There is no
+ * registration in this platform — accounts exist because an operator ran
+ * `fixmate:create-account`, and that command is the only way one is made. The
+ * password in `RegistrationInput` is accepted and ignored rather than echoed, so
+ * no credential is put in a response where a proxy could log it or a screen could
+ * display it.
+ *
+ * `user` carries only the two fields the design's success state shows. A phone
+ * number is absent because the registration frame has no phone field to echo one
+ * from.
+ */
+export interface RegistrationInput {
+    name: string
+    email: string
+    password: string
+}
+
+export interface RegistrationAccount {
+    id: number
+    name: string
+    email: string
+}
+
+export interface RegistrationResult {
+    success: boolean
+    message: string
+    user: RegistrationAccount
+    token: string
+}
+
+const registrationRequest: Schema<RegistrationInput> = object({
+    name: string(),
+    email: string(),
+    password: string(),
+})
+
+const registrationResponse: Schema<RegistrationResult> = object({
+    success: boolean(),
+    message: string(),
+    user: object({
+        id: number(),
+        name: string(),
+        email: string(),
+    }),
+    token: string(),
+})
+
+/**
+ * A service category the customer can browse.
+ *
+ * `price_from` is an integer in `currency` and **not a formatted string.** Four
+ * front ends draw prices, and a server that pre-rendered one would be choosing a
+ * locale and a separator for all four. Nothing here computed it — there is no
+ * pricing table in this repository — so a screen must not present it as an offer.
+ */
+export interface ServiceCategory {
+    id: string
+    label: string
+    price_from: number
+    currency: string
+}
+
+/**
+ * One technician in the dashboard's carousel.
+ *
+ * **`completed_jobs` is a count and not the review count**, even though the shared
+ * fixture happens to carry the same number for both. A carousel says "120 jobs"
+ * and a match card says "(120)" beside a star, and those are different claims
+ * about a person: one is volume, the other is how many people rated him. Naming
+ * them the same field would have made a later fixture able to say a technician
+ * has done 240 jobs and been rated by 12 people without anything looking wrong.
+ */
+export interface FeaturedTechnician {
+    id: string
+    name: string
+    trade: string
+    rating: number
+    completed_jobs: number
+}
+
+export interface Discovery {
+    categories: ServiceCategory[]
+    featured_technicians: FeaturedTechnician[]
+}
+
+const discovery: Schema<Discovery> = object({
+    categories: array(
+        object({
+            id: string(),
+            label: string(),
+            price_from: number(),
+            currency: string(),
+        }),
+    ),
+    featured_technicians: array(
+        object({
+            id: string(),
+            name: string(),
+            trade: string(),
+            rating: number(),
+            completed_jobs: number(),
+        }),
+    ),
+})
+
+/**
+ * When a technician could start.
+ *
+ * `label` and `available_now` are both sent and both are needed. The label is what
+ * the card prints and the flag is what decides whether its button offers to book
+ * — a screen given only the flag would have to invent "Available Now", and one
+ * given only the label would have to compare English strings to decide whether
+ * somebody can be booked.
+ */
+export interface TechnicianAvailability {
+    label: string
+    available_now: boolean
+}
+
+/**
+ * One match result.
+ *
+ * **`trade` and `years_experience` are separate and the screen joins them.** The
+ * design prints "Master Plumber • 12 yrs exp" — one line, two facts, and a
+ * separator that is a rendering decision. Sending the joined string would put the
+ * bullet character and the abbreviation in a controller, where four front ends
+ * would each want to spell them their own way.
+ */
+export interface MatchResult {
+    id: string
+    name: string
+    trade: string
+    years_experience: number
+    base_fee: number
+    currency: string
+    rating: number
+    review_count: number
+    distance_km: number
+    availability: TechnicianAvailability
+    best_match: boolean
+}
+
+/**
+ * A sort the design offers and this endpoint does not perform.
+ *
+ * Sent with an identifier and a label and **no behaviour whatsoever** — nothing
+ * reads it and nothing changes the order of `technicians`. It is sent rather than
+ * left in the screen so that its inertness is visible in one place: a server is
+ * offering to sort these results, and the list arrives in the order the fixture
+ * was written.
+ */
+export interface MatchFilter {
+    id: string
+    label: string
+}
+
+export interface Matching {
+    query: string
+    area: string
+    found_count: number
+    summary: string
+    average_arrival_minutes: number
+    estimated_cost: MoneyRange
+    filters: MatchFilter[]
+    technicians: MatchResult[]
+}
+
+const matching: Schema<Matching> = object({
+    query: string(),
+    area: string(),
+    found_count: number(),
+    summary: string(),
+    average_arrival_minutes: number(),
+    estimated_cost: moneyRange,
+    filters: array(
+        object({
+            id: string(),
+            label: string(),
+        }),
+    ),
+    technicians: array(
+        object({
+            id: string(),
+            name: string(),
+            trade: string(),
+            years_experience: number(),
+            base_fee: number(),
+            currency: string(),
+            rating: number(),
+            review_count: number(),
+            distance_km: number(),
+            availability: object({
+                label: string(),
+                available_now: boolean(),
+            }),
+            best_match: boolean(),
+        }),
+    ),
+})
+
+/**
+ * A day the technician could come.
+ *
+ * `is_today` is a flag and the screen renders the word "TODAY" from it. A stored
+ * "TODAY" would be asserting that a day captured at some point in the past is
+ * still today — and these front ends are static exports, served unchanged from
+ * whenever they were built.
+ */
+export interface BookingDay {
+    date: string
+    weekday: string
+    day_label: string
+    is_today: boolean
+}
+
+export interface BookingSlot {
+    starts_at: string
+    label: string
+}
+
+export interface EstimateLine {
+    label: string
+    amount: number
+}
+
+/**
+ * A price broken into its parts.
+ *
+ * **Nothing computed any of it.** There is no pricing table, no rate card, no
+ * labour rate and no platform fee in this repository, so these three lines are the
+ * shape of a quote rather than a quote. `total` is stated separately rather than
+ * left for a caller to add up, because a screen that summed the lines and
+ * disagreed with a total it was also sent would have no way to know which of the
+ * two was wrong.
+ */
+export interface BookingEstimate {
+    heading: string
+    badge: string
+    lines: EstimateLine[]
+    total: number
+    total_label: string
+    currency: string
+    footnote: string
+}
+
+/**
+ * The technician booked for a quote.
+ *
+ * **Its own type rather than {@link TrackingWorker}, and the difference is
+ * load-bearing.** `TrackingWorker` carries `phone` and `photo_url` as nullable
+ * because the tracker has to show a call button that works for somebody who has
+ * put a number in and must not for somebody who has not. The quote has no such
+ * problem: it draws a card with a name, a trade and a rating, and there is no
+ * field on the design it would be drawn into.
+ *
+ * Reusing the tracking type would have meant the quote's schema carrying two
+ * fields the controller does not send, so the schema would have to say
+ * `nullable` and the screen would be handed two `null`s it had no use for — and
+ * the first person to draw a phone icon onto this card would have had a type
+ * telling them the value was there. It is `null` because the endpoint omits it,
+ * and the type says so.
+ */
+export interface BookingTechnician {
+    id: string
+    name: string
+    trade: string
+    rating: number
+    review_count: number
+}
+
+/**
+ * A way of paying that this repository cannot take.
+ *
+ * There is no gateway, no checkout, no order and no payment intent anywhere. A
+ * screen drawing these is drawing radio inputs that select local state.
+ */
+export interface PaymentMethod {
+    id: string
+    title: string
+    note: string
+}
+
+export interface BookingQuote {
+    booking_id: string
+    category: string
+    service: string
+    technician: BookingTechnician
+    dates: BookingDay[]
+    times: BookingSlot[]
+    estimate: BookingEstimate
+    payment_methods: PaymentMethod[]
+}
+
+const bookingQuote: Schema<BookingQuote> = object({
+    booking_id: string(),
+    category: string(),
+    service: string(),
+    technician: object({
+        id: string(),
+        name: string(),
+        trade: string(),
+        rating: number(),
+        review_count: number(),
+    }),
+    dates: array(
+        object({
+            date: string(),
+            weekday: string(),
+            day_label: string(),
+            is_today: boolean(),
+        }),
+    ),
+    times: array(
+        object({
+            starts_at: string(),
+            label: string(),
+        }),
+    ),
+    estimate: object({
+        heading: string(),
+        badge: string(),
+        lines: array(
+            object({
+                label: string(),
+                amount: number(),
+            }),
+        ),
+        total: number(),
+        total_label: string(),
+        currency: string(),
+        footnote: string(),
+    }),
+    payment_methods: array(
+        object({
+            id: string(),
+            title: string(),
+            note: string(),
+        }),
+    ),
+})
+
 const definitions = {
     signInUser: {
         // Calling the generated function yields its URL and verb. The URL is
@@ -835,6 +1417,59 @@ const definitions = {
         route: signOutSuperAdminRoute() satisfies Route,
         response: signOutResponse,
     },
+    // The five mocked customer operations behind the customer door.
+    //
+    // Every one of them answers a literal. The routes exist so the designed
+    // screens have a typed shape to be written and reviewed against, and the
+    // shapes are validated here so a screen breaks on a contract change rather
+    // than rendering `undefined` into a price or an ETA. What they are *not* is a
+    // capability: nothing behind `getDiagnosis` classifies anything, and the
+    // coordinates behind `getTracking` never move. Each response type says so at
+    // the definition, because the alternative is a reader who sees a validated
+    // `confidence` and a validated `eta_minutes` and believes both.
+    //
+    // None of them use the `data` envelope the rest of the API uses, and that is
+    // a difference worth noticing rather than smoothing over: `client.request`
+    // hands back the whole parsed payload, and these operations return that
+    // payload directly instead of destructuring `data` out of it. Giving them an
+    // envelope would mean inventing a second convention in order to match the
+    // first, and nothing about these five warrants a new rule.
+    getDiagnosis: {
+        route: diagnosisRoute() satisfies Route,
+        response: diagnosisResult,
+    },
+    getDiagnosisSuggestions: {
+        route: diagnosisSuggestionsRoute() satisfies Route,
+        response: diagnosisSuggestions,
+    },
+    getTracking: {
+        route: trackingRoute() satisfies Route,
+        response: liveTracking,
+    },
+    listBookings: {
+        route: bookingsRoute() satisfies Route,
+        response: bookingList,
+    },
+    getDiscovery: {
+        route: discoveryRoute() satisfies Route,
+        response: discovery,
+    },
+    getMatching: {
+        route: matchingRoute() satisfies Route,
+        response: matching,
+    },
+    getBookingQuote: {
+        // A function for the same reason as `showAdmin` above: the identifier is
+        // not known when this object is built. Resolving it here with a
+        // placeholder would put a made-up booking's URL in the contract.
+        route: (booking: string) => bookingQuoteRoute(booking) satisfies Route,
+        response: bookingQuote,
+    },
+    registerUser: {
+        route: registerUserRoute() satisfies Route,
+        body: registrationRequest,
+        response: registrationResponse,
+    },
 } as const
 
 export type OperationName = keyof typeof definitions
@@ -1063,6 +1698,108 @@ export interface Operations {
         current_password: string
         password: string
     }): Promise<CurrentAccount>
+
+    /**
+     * The mocked AI diagnosis behind the registration and home screens.
+     *
+     * **Mocked.** The controller takes no input and returns a literal, so this
+     * resolves with the same object for every caller forever. It is typed and
+     * validated so the screen is built against a real shape, not so a capability
+     * exists.
+     *
+     * Rejects with an ApiError of kind `unauthenticated` or `forbidden` when the
+     * token is missing or is not a customer token.
+     */
+    getDiagnosis(): Promise<DiagnosisResult>
+
+    /**
+     * The mocked categories a diagnosis can be one of.
+     *
+     * **Mocked.** Three fixed entries and a `recommended` that names one of them;
+     * neither is ranked or scored.
+     */
+    getDiagnosisSuggestions(): Promise<DiagnosisSuggestions>
+
+    /**
+     * The mocked live position of a technician travelling to a booking.
+     *
+     * **Mocked, and this is the one most likely to be misread.** The coordinates,
+     * the distance and `eta_minutes` are literals describing a journey that is not
+     * happening, and nothing polls this endpoint. A screen that draws a map from
+     * them draws a technician standing still forever — so do not render these as
+     * live readings without saying that they are not.
+     */
+    getTracking(): Promise<LiveTracking>
+
+    /**
+     * The mocked bookings of the signed-in customer.
+     *
+     * **Mocked, and identical for every customer.** Two fixed bookings come back
+     * regardless of whose token asked, which is the half that matters: a screen
+     * rendering this looks right to whoever wrote it and is wrong to everybody.
+     */
+    listBookings(): Promise<BookingList>
+
+    /**
+     * The landing screen's two lists: service categories and featured
+     * technicians.
+     *
+     * **Both are literals.** Nothing here was looked up, nothing was ranked and
+     * no price was computed. A `200` means the screen has something to draw, and
+     * it means nothing about whether any of it exists.
+     *
+     * The two lists are in one response because the dashboard draws them together
+     * and reads them as one question. Splitting them would have meant two loading
+     * states for one screen.
+     */
+    getDiscovery(): Promise<Discovery>
+
+    /**
+     * The answer to a search: three technicians and the numbers around them.
+     *
+     * **Mocked, and it ignores every sort it offers.** `filters` arrives with
+     * identifiers and labels and no behaviour — nothing reads it, and nothing
+     * reorders `technicians`. The order is the fixture's order, which is why the
+     * highest-rated technician is listed last: a payload that had been sorted by
+     * anything would not look like that.
+     *
+     * `found_count` is 24 and `technicians` holds three, which is what the design
+     * draws and which a real endpoint would never do. **A screen must not use
+     * `found_count` to decide how many cards to draw.**
+     */
+    getMatching(): Promise<Matching>
+
+    /**
+     * One booking's quote: who is coming, when they could come, what it costs
+     * broken down, and how it could be paid for.
+     *
+     * **Mocked, and this is the operation most likely to be mistaken for a real
+     * one.** The three estimate lines add up to `total` and nothing computed
+     * either. No technician would turn up expecting to be paid that amount, and
+     * `payment_methods` is three ways to pay that no gateway in this repository
+     * can take.
+     *
+     * `booking` is the one route parameter in the generated client for a customer
+     * route, so the identifier is substituted by the route function and the path
+     * is never assembled by hand. **Any identifier other than `BK-2041` is
+     * refused with a `404`** — the only mocked customer endpoint that can say no.
+     */
+    getBookingQuote(booking: string): Promise<BookingQuote>
+
+    /**
+     * Registration, answering `201` without creating anything.
+     *
+     * **Mocked, and it creates no account.** There is no registration in this
+     * platform — accounts exist because an operator ran `fixmate:create-account`.
+     * This echoes the `name` and `email` it was sent, ignores the password, and
+     * returns a `token` that is a random string nothing accepts.
+     *
+     * The route sits behind the customer door itself, so it is unreachable before
+     * an account already exists. A screen that treats a resolved promise as "this
+     * person now has an account" is wrong, and `token` being present is what makes
+     * that mistake easy to write.
+     */
+    registerUser(input: RegistrationInput): Promise<RegistrationResult>
 
     /**
      * Every product in the catalogue.
@@ -1319,6 +2056,51 @@ export function createOperations(client: ApiClient): Operations {
             })
 
             return data
+        },
+        // The five mocked customer operations. Each returns the payload whole
+        // rather than destructuring `data`, because these five responses are not
+        // wrapped in the envelope the rest of the API uses — see the note on the
+        // `definitions` above.
+        async getDiagnosis() {
+            return client.request(definitions.getDiagnosis.route, {
+                response: definitions.getDiagnosis.response,
+            })
+        },
+        async getDiagnosisSuggestions() {
+            return client.request(definitions.getDiagnosisSuggestions.route, {
+                response: definitions.getDiagnosisSuggestions.response,
+            })
+        },
+        async getTracking() {
+            return client.request(definitions.getTracking.route, {
+                response: definitions.getTracking.response,
+            })
+        },
+        async listBookings() {
+            return client.request(definitions.listBookings.route, {
+                response: definitions.listBookings.response,
+            })
+        },
+        async getDiscovery() {
+            return client.request(definitions.getDiscovery.route, {
+                response: definitions.getDiscovery.response,
+            })
+        },
+        async getMatching() {
+            return client.request(definitions.getMatching.route, {
+                response: definitions.getMatching.response,
+            })
+        },
+        async getBookingQuote(booking) {
+            return client.request(definitions.getBookingQuote.route(booking), {
+                response: definitions.getBookingQuote.response,
+            })
+        },
+        async registerUser(input) {
+            return client.request(definitions.registerUser.route, {
+                body: input,
+                response: definitions.registerUser.response,
+            })
         },
         async listProducts() {
             const { data } = await client.request(definitions.listProducts.route, {

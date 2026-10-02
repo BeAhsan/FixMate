@@ -1327,6 +1327,311 @@
           }
         }
       }
+    },
+    "/api/v1/identity/users/diagnosis": {
+      "get": {
+        "operationId": "getDiagnosis",
+        "x-laravel-route": "users.diagnosis",
+        "x-required-account-type": "users",
+        "tags": [
+          "Customer"
+        ],
+        "summary": "The mocked diagnosis for a described problem.",
+        "description": "**Mocked.** Every value below is a literal in `DiagnosisController`. Nothing is derived from a description and no request can reach the controller with one — it takes no input at all — so no model, estimator or image classifier runs behind it. The endpoint exists so the diagnosis screen has a typed shape to render while the estimator is being built, and it will answer the same thing forever.\n\n`price_estimate` is a rupee range as integers. No symbol is carried in the payload: format at the point of display.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mocked diagnosis.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosisResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/users/diagnosis/suggestions": {
+      "get": {
+        "operationId": "getDiagnosisSuggestions",
+        "x-laravel-route": "users.diagnosis.suggestions",
+        "x-required-account-type": "users",
+        "tags": [
+          "Customer"
+        ],
+        "summary": "The mocked categories a diagnosis can be one of.",
+        "description": "**Mocked.** A fixed list of three, and `recommended` names one of them. It is not computed from anything and there is no ranking behind it, so the value is a choice made in the controller rather than a result.\n\n`confidence` is a number between 0 and 1 and is not a probability of anything: nothing was scored.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mocked suggestions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosisSuggestionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/users/tracking": {
+      "get": {
+        "operationId": "getTracking",
+        "x-laravel-route": "users.tracking",
+        "x-required-account-type": "users",
+        "tags": [
+          "Customer"
+        ],
+        "summary": "The mocked live position of a technician travelling to a booking.",
+        "description": "**Mocked.** This is the most misleading endpoint on the API, which is the reason to read its description. `location`, `distance_km` and `eta_minutes` describe a journey that is not happening: the coordinates are two fixed points, the distance and the ETA are literals, and nothing polls this endpoint or moves anything between calls. A screen that draws a map from these numbers shows a technician standing still in one place forever.\n\n`status` is a single string and `stages` repeats each stage with its own `completed` flag, so a client never has to derive one from the other and the two cannot disagree inside a payload.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mocked tracking state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/users/bookings": {
+      "get": {
+        "operationId": "listBookings",
+        "x-laravel-route": "users.bookings",
+        "x-required-account-type": "users",
+        "tags": [
+          "Customer"
+        ],
+        "summary": "The mocked list of a customer's bookings.",
+        "description": "**Mocked.** Two fixed bookings, with timestamps relative to the moment of the request. Nothing in the list belongs to the account whose token presented it, which is the important half: every customer receives an identical list, so a screen that renders it will look correct to whoever wrote it and be wrong to everybody.\n\n`bookings` is always an array and there is no pagination envelope, so a caller renders a list in both the populated and the empty case and never has to treat \"no bookings\" as a failure.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mocked bookings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/users/discovery": {
+      "get": {
+        "operationId": "getDiscovery",
+        "x-laravel-route": "users.discovery",
+        "x-required-account-type": "users",
+        "tags": [
+          "Customer"
+        ],
+        "summary": "The landing screen's two lists.",
+        "description": "**Both mocked.** Service categories with a \"from\" price, and two featured technicians drawn from the same roster the matching endpoint offers, so the same person appears on both screens with the same rating and the same base fee.\n\n`price_from` is an integer in `currency` and nothing computed it — there is no pricing table in this repository. **A screen must not present it as an offer.**\n\nThere is no `tone` field. The design tints its three cards differently, and that is a colour rather than a fact about a service; the screen keys the tint off the category's own identifier instead, and falls back to a neutral card for anything it has not seen.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mocked payload.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/users/matching": {
+      "get": {
+        "operationId": "getMatching",
+        "x-laravel-route": "users.matching",
+        "x-required-account-type": "users",
+        "tags": [
+          "Customer"
+        ],
+        "summary": "The answer to a search.",
+        "description": "**Mocked, and it ignores every sort it offers.** `filters` arrives with identifiers and labels and no behaviour: nothing reads it, and nothing reorders `technicians`. The order is the order the fixture was written, which is why the highest-rated technician is listed last — a payload that had been sorted by anything would not look like that.\n\n`found_count` is 24 and `technicians` holds three. That is what the design draws and what a real endpoint would never do, so **a caller must not use `found_count` to decide how many cards to draw.**\n\n`summary` describes a matching run that has not happened. It is the most persuasive string on this endpoint and the least substantiated; it is kept because the design contains it, and the front end's honesty record names it.\n\nThis endpoint takes no query parameter and ignores one if given. There is no index of technicians, no distance to compute from, no prices to compare and no reviews to rank.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mocked payload.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/users/bookings/{booking}/quote": {
+      "get": {
+        "operationId": "getBookingQuote",
+        "x-laravel-route": "users.bookings.quote",
+        "x-required-account-type": "users",
+        "tags": [
+          "Customer"
+        ],
+        "summary": "One booking's quote.",
+        "description": "**Mocked, and this is the endpoint most likely to be mistaken for a real one.** The three estimate lines add up to `total` and nothing computed either; no technician would arrive expecting to be paid that amount. `payment_methods` is three ways to pay that no gateway in this repository can take.\n\n**The only mocked customer endpoint that can say no.** An identifier other than `BK-2041` is refused with a `404` rather than answered with the example booking's technician — answering is exactly what an endpoint that forgot to look anything up looks like, and the screen would render it without complaint.\n\n`dates` are `now()` plus zero, one and two, with the weekday and the day label derived from those dates rather than typed beside them. The design says \"TODAY / 14 Oct\", which cannot both be true; arithmetic resolves the contradiction instead of prose. `is_today` is a flag and the screen renders the word from it, because a stored \"TODAY\" would be asserting that a day captured in the past is still today — and these front ends are static exports served unchanged from whenever they were built.\n\nEvery `times` entry is today's, because nothing is selected: the day and the slot are both local state on a screen whose only button books nothing.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "booking",
+            "in": "path",
+            "required": true,
+            "description": "The booking's identifier. Deliberately unconstrained: it is compared against one string, so any pattern that let a value through would reach the same `404`, and any pattern that turned one away would only move the failure to a route that says less about it.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "BK-2041"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The mocked payload.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingQuoteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/identity/users/register": {
+      "post": {
+        "operationId": "registerUser",
+        "x-laravel-route": "users.register",
+        "x-required-account-type": "users",
+        "tags": [
+          "Customer"
+        ],
+        "summary": "Register, answering `201` without creating anything.",
+        "description": "**Mocked, and it creates no account.** There is no registration in this platform: accounts exist because an operator ran `fixmate:create-account`, and that command is the only way one is made. This route echoes the `name` and `email` it was given and returns a `token` that is a random string nothing accepts. The password is accepted and ignored — not echoed, not hashed, not recorded.\n\n**It is unreachable before an account exists.** The route sits behind `auth:sanctum` and the customer door, so presenting no token gets a `401` and presenting a worker's token gets a `403`. That is deliberate rather than an oversight: a registration form you can only reach once signed in is visibly unfinished, and the alternative is a door that looks real and stores nothing.\n\nA `201` is returned deliberately, to match the shape the screen is written against. When registration is really built this becomes a real account creation and the `201` starts meaning something; until then it means \"the screen's happy path rendered\", and this description is where that is said.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "A mocked success. No account was created and the token is not a credential.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1985,6 +2290,738 @@
             "description": "The price as a bare JSON number. **A number, not a string** - it is rendered here as `19.99` and not `\"19.99\"`, because the front end formats this value directly and will not coerce a string first.\n\nThe stored value is a decimal(10,2), so it always has two decimal places internally, but JSON does not carry that: a price of `5.00` is returned as `5` and `124.50` as `124.5`. These are the same JSON number and the same JavaScript value. Format to two places for display; do not read the number of places off the payload."
           }
         }
+      },
+      "Money": {
+        "description": "A rupee range. Integers, no symbol and no decimal, because nothing here is computed and a pre-formatted string in a payload cannot be formatted again.",
+        "type": "object",
+        "properties": {
+          "min": {
+            "type": "integer"
+          },
+          "max": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "INR"
+            ]
+          }
+        },
+        "required": [
+          "min",
+          "max",
+          "currency"
+        ]
+      },
+      "DiagnosisResponse": {
+        "type": "object",
+        "properties": {
+          "diagnosis": {
+            "type": "object",
+            "properties": {
+              "problem": {
+                "type": "string"
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "possible_causes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "recommended_solution": {
+                "type": "string"
+              },
+              "estimated_time": {
+                "type": "string"
+              },
+              "price_estimate": {
+                "$ref": "#/components/schemas/Money"
+              },
+              "tools_needed": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "problem",
+              "severity",
+              "possible_causes",
+              "recommended_solution",
+              "estimated_time",
+              "price_estimate",
+              "tools_needed"
+            ]
+          }
+        },
+        "required": [
+          "diagnosis"
+        ]
+      },
+      "DiagnosisSuggestionsResponse": {
+        "type": "object",
+        "properties": {
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "price_range": {
+                  "$ref": "#/components/schemas/Money"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "description",
+                "confidence",
+                "price_range"
+              ]
+            }
+          },
+          "recommended": {
+            "type": "string",
+            "description": "The `id` of one of the suggestions. Named rather than implied by position, so a client cannot read the wrong entry once the list is reordered."
+          }
+        },
+        "required": [
+          "suggestions",
+          "recommended"
+        ]
+      },
+      "TrackingResponse": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string",
+            "description": "What the technician is travelling to fix. Present because a tracker that cannot say what the job is cannot be read by the person waiting for it — \"On the way\" with no job attached is a progress bar."
+          },
+          "worker": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string",
+                "nullable": true
+              },
+              "rating": {
+                "type": "number",
+                "format": "float"
+              },
+              "photo_url": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "phone",
+              "rating",
+              "photo_url"
+            ]
+          },
+          "location": {
+            "type": "object",
+            "properties": {
+              "worker_lat": {
+                "type": "number",
+                "format": "float"
+              },
+              "worker_lng": {
+                "type": "number",
+                "format": "float"
+              },
+              "destination_lat": {
+                "type": "number",
+                "format": "float"
+              },
+              "destination_lng": {
+                "type": "number",
+                "format": "float"
+              },
+              "distance_km": {
+                "type": "number",
+                "format": "float"
+              },
+              "eta_minutes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "worker_lat",
+              "worker_lng",
+              "destination_lat",
+              "destination_lng",
+              "distance_km",
+              "eta_minutes"
+            ]
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "description": "A stage that has not happened carries a null `timestamp` rather than an absent field, so a client reading the array never has to tell \"not yet\" from \"this payload is malformed\".",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "completed": {
+                  "type": "boolean"
+                },
+                "timestamp": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "name",
+                "completed",
+                "timestamp"
+              ]
+            }
+          }
+        },
+        "required": [
+          "booking_id",
+          "status",
+          "service",
+          "worker",
+          "location",
+          "stages"
+        ]
+      },
+      "BookingListResponse": {
+        "type": "object",
+        "properties": {
+          "bookings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "service": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "status_label": {
+                  "description": "The word the row prints, sent because `in_progress` is a database value and stripping the underscore is still a machine's idea of a phrase. `status` stays, so a caller can branch on it.",
+                  "type": "string"
+                },
+                "worker_name": {
+                  "type": "string"
+                },
+                "scheduled_at": {
+                  "type": "string"
+                },
+                "scheduled_on": {
+                  "description": "The locale-formatted date the row prints, beside the ISO string. Four front ends should not each invent a date format — the same reasoning that put `day_label` on the quote's three dates.",
+                  "type": "string"
+                },
+                "price": {
+                  "type": "integer"
+                },
+                "currency": {
+                  "type": "string",
+                  "enum": [
+                    "INR"
+                  ]
+                },
+                "has_quote": {
+                  "description": "Whether `GET /users/bookings/{booking}/quote` answers for this booking. **Required rather than optional**, because a screen cannot tell \"this booking has no quote\" from \"this payload predates the field\" — and defaulting it to `false` would render the second as the first, a row that cannot be opened for no reason a reader could see.\n\nTrue for the booking in progress and false for the completed one, and that is not an omission: a quote is what somebody is quoted *before* agreeing to a price, and a finished job has a receipt instead — which this repository has no endpoint for.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "service",
+                "status",
+                "status_label",
+                "worker_name",
+                "scheduled_at",
+                "scheduled_on",
+                "price",
+                "currency",
+                "has_quote"
+              ]
+            }
+          }
+        },
+        "required": [
+          "bookings"
+        ]
+      },
+      "RegistrationRequest": {
+        "type": "object",
+        "description": "Echoed back rather than validated or stored. `password` is accepted and then ignored: it is not echoed in the response, not hashed and not recorded, so a credential never travels somewhere it does not need to be — a proxy log, a browser cache, or a screen that only wanted a name.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "password"
+        ]
+      },
+      "RegistrationResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "user": {
+            "type": "object",
+            "description": "The two fields the design's success state shows. No phone number, because the registration frame has no phone field to echo one from.",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "email"
+            ]
+          },
+          "token": {
+            "type": "string",
+            "description": "A random string, and **not a credential**. Nothing accepts it, `auth:sanctum` cannot resolve it, and it is not recorded anywhere."
+          }
+        },
+        "required": [
+          "success",
+          "message",
+          "user",
+          "token"
+        ]
+      },
+      "DiscoveryResponse": {
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "description": "A kind of work, and the lowest price anybody might charge for it. Nothing computed that price.",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "price_from": {
+                  "type": "integer"
+                },
+                "currency": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "price_from",
+                "currency"
+              ]
+            }
+          },
+          "featured_technicians": {
+            "type": "array",
+            "items": {
+              "description": "A technician the carousel draws. `completed_jobs` is a volume claim rather than a rating count, even though the fixture happens to carry the same number for both — naming them the same field would have let a later fixture say somebody has done 240 jobs and been rated by 12 people with nothing looking wrong.",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "trade": {
+                  "type": "string"
+                },
+                "rating": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "completed_jobs": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "trade",
+                "rating",
+                "completed_jobs"
+              ]
+            }
+          }
+        },
+        "required": [
+          "categories",
+          "featured_technicians"
+        ]
+      },
+      "MatchingResponse": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "area": {
+            "type": "string"
+          },
+          "found_count": {
+            "type": "integer",
+            "description": "How many matches exist in total. **Not the length of `technicians`**, so it cannot be used to decide how many cards to draw."
+          },
+          "summary": {
+            "type": "string",
+            "description": "The sentence describing a matching run that has not happened. Kept from the design and unsubstantiated; the front end's honesty record names it."
+          },
+          "average_arrival_minutes": {
+            "type": "integer"
+          },
+          "estimated_cost": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "description": "A sort the design offers and this endpoint does not perform. Sent rather than left in the screen so its inertness is visible in one place: a server is offering to sort these results, and the list arrives in the order the fixture was written.",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label"
+              ]
+            }
+          },
+          "technicians": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "trade": {
+                  "type": "string",
+                  "description": "The trade on its own, so four front ends each join it to `years_experience` their own way rather than receiving a bullet character in a payload."
+                },
+                "years_experience": {
+                  "type": "integer"
+                },
+                "base_fee": {
+                  "type": "integer"
+                },
+                "currency": {
+                  "type": "string"
+                },
+                "rating": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "review_count": {
+                  "type": "integer"
+                },
+                "distance_km": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "availability": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "description": "What the card prints."
+                    },
+                    "available_now": {
+                      "type": "boolean",
+                      "description": "Whether the card's action offers to book. Both are sent because both are needed: a screen given only the flag would have to invent \"Available Now\", and one given only the label would have to compare English strings to decide whether somebody can be booked."
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "available_now"
+                  ]
+                },
+                "best_match": {
+                  "type": "boolean",
+                  "description": "The badge the design draws. **Nothing here ranked anything**; this marks a position in an array the fixture put there on purpose."
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "trade",
+                "years_experience",
+                "base_fee",
+                "currency",
+                "rating",
+                "review_count",
+                "distance_km",
+                "availability",
+                "best_match"
+              ]
+            }
+          }
+        },
+        "required": [
+          "query",
+          "area",
+          "found_count",
+          "summary",
+          "average_arrival_minutes",
+          "estimated_cost",
+          "filters",
+          "technicians"
+        ]
+      },
+      "BookingQuoteResponse": {
+        "type": "object",
+        "properties": {
+          "booking_id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "description": "The kind of work the booking falls under. The bookings list names a category and this names the specific job, and having both is what lets the two endpoints agree about one booking."
+          },
+          "service": {
+            "type": "string"
+          },
+          "technician": {
+            "description": "Deliberately **not** the tracking worker's shape. That one carries `phone` and `photo_url` as nullable because the tracker may have to show a call button; this card draws none, so the two fields are absent rather than null — a null would say \"this endpoint has no value\", which is not the same as \"there is no value\".",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "trade": {
+                "type": "string"
+              },
+              "rating": {
+                "type": "number",
+                "format": "float"
+              },
+              "review_count": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "trade",
+              "rating",
+              "review_count"
+            ]
+          },
+          "dates": {
+            "type": "array",
+            "items": {
+              "description": "A day the technician could come. Computed from `now()` rather than typed in, so the three offered days are always three consecutive days.",
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "description": "ISO date, `Y-m-d`."
+                },
+                "weekday": {
+                  "type": "string"
+                },
+                "day_label": {
+                  "type": "string"
+                },
+                "is_today": {
+                  "type": "boolean",
+                  "description": "A flag the screen renders the word \"TODAY\" from, rather than a stored \"TODAY\" that would be asserting a day captured in the past is still today."
+                }
+              },
+              "required": [
+                "date",
+                "weekday",
+                "day_label",
+                "is_today"
+              ]
+            }
+          },
+          "times": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "starts_at": {
+                  "type": "string",
+                  "description": "ISO 8601."
+                },
+                "label": {
+                  "type": "string",
+                  "description": "The twelve-hour label the card prints, sent because that casing is a rendering decision four front ends should each make for themselves. Every slot is today's, because nothing is selected."
+                }
+              },
+              "required": [
+                "starts_at",
+                "label"
+              ]
+            }
+          },
+          "estimate": {
+            "description": "**Nothing computed any of it.** There is no pricing table, no rate card, no labour rate and no platform fee in this repository, so these three lines are the shape of a quote rather than a quote.",
+            "type": "object",
+            "properties": {
+              "heading": {
+                "type": "string"
+              },
+              "badge": {
+                "type": "string"
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "description": "Amounts as integers, never as rendered strings: four front ends draw prices, and a pre-formatted string in a payload cannot be formatted again.",
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "label",
+                    "amount"
+                  ]
+                }
+              },
+              "total": {
+                "type": "integer",
+                "description": "**Stated rather than left to be summed.** A caller that added the lines and disagreed with a total it was also sent would have no way to know which of the two was wrong."
+              },
+              "total_label": {
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "footnote": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "heading",
+              "badge",
+              "lines",
+              "total",
+              "total_label",
+              "currency",
+              "footnote"
+            ]
+          },
+          "payment_methods": {
+            "type": "array",
+            "items": {
+              "description": "A way of paying that this repository cannot take. There is no gateway, no checkout, no order and no payment intent anywhere.",
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "note"
+              ]
+            }
+          }
+        },
+        "required": [
+          "booking_id",
+          "category",
+          "service",
+          "technician",
+          "dates",
+          "times",
+          "estimate",
+          "payment_methods"
+        ]
       }
     }
   }

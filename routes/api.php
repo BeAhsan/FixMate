@@ -35,6 +35,14 @@ use App\Http\Controllers\Auth\UserPasswordResetController;
 use App\Http\Controllers\Auth\WorkerLoginController;
 use App\Http\Controllers\Auth\WorkerPasswordResetController;
 use App\Http\Controllers\Catalog\IndexProductsController;
+use App\Http\Controllers\Customer\BookingQuoteController;
+use App\Http\Controllers\Customer\CustomerRegistrationController;
+use App\Http\Controllers\Customer\DiagnosisController;
+use App\Http\Controllers\Customer\DiagnosisSuggestionsController;
+use App\Http\Controllers\Customer\DiscoveryController;
+use App\Http\Controllers\Customer\IndexBookingsController;
+use App\Http\Controllers\Customer\LiveTrackingController;
+use App\Http\Controllers\Customer\MatchingController;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Providers\AppServiceProvider;
 
@@ -334,6 +342,70 @@ Route::prefix('v1/identity')
                 ->middleware('account.can:'.AccountType::SuperAdmin->value.','.Ability::ACCOUNTS_PROMOTE)
                 ->where('admin', '[1-9][0-9]*')
                 ->name('admins.promote');
+
+            // The five mocked customer endpoints, behind the customer door.
+            //
+            // **Every one answers a literal**, and the controllers each say so at
+            // the definition. They exist so the designed screens have a shape that
+            // something validates — a component-local constant has none — and each
+            // `account.can` names the customer explicitly rather than relying on the
+            // group, so a worker token cannot reach a screen about a customer's
+            // bookings even if the middleware is later rearranged.
+            //
+            // `EnsurePasswordChanged` is not repeated here: the group already has
+            // it, so a flagged account is refused all five along with everything
+            // else.
+            Route::get('/users/diagnosis', DiagnosisController::class)
+                ->middleware('account.can:'.AccountType::User->value)
+                ->name('users.diagnosis');
+
+            Route::get('/users/diagnosis/suggestions', DiagnosisSuggestionsController::class)
+                ->middleware('account.can:'.AccountType::User->value)
+                ->name('users.diagnosis.suggestions');
+
+            Route::get('/users/tracking', LiveTrackingController::class)
+                ->middleware('account.can:'.AccountType::User->value)
+                ->name('users.tracking');
+
+            Route::get('/users/bookings', IndexBookingsController::class)
+                ->middleware('account.can:'.AccountType::User->value)
+                ->name('users.bookings');
+
+            Route::post('/users/register', CustomerRegistrationController::class)
+                ->middleware('account.can:'.AccountType::User->value)
+                ->name('users.register');
+
+            /*
+             * The three endpoints the remaining customer screens read: the
+             * dashboard's two lists, the matching screen's results, and the quote
+             * behind the booking screen.
+             *
+             * `/users/bookings/{booking}/quote` is the only route in this group
+             * with a parameter, and it is the only one that answers `404`. That is
+             * deliberate on both counts: the other seven answer a literal whatever
+             * they are asked, which is honest for a fixture and impossible for a
+             * real endpoint, and having exactly one refusal somewhere in the group
+             * means the group is not uniformly incapable of saying no.
+             *
+             * The parameter's constraint is deliberately **absent**, unlike the
+             * admin routes further up this file which pin `->where('admin',
+             * '[1-9][0-9]*')`. Those constrain because a wrong value there is a
+             * lookup against a real table. Here the value is compared against one
+             * string, so any pattern that let through would reach the same `404`
+             * and any pattern that turned it away would only move the failure to a
+             * route that says less about it.
+             */
+            Route::get('/users/discovery', DiscoveryController::class)
+                ->middleware('account.can:'.AccountType::User->value)
+                ->name('users.discovery');
+
+            Route::get('/users/matching', MatchingController::class)
+                ->middleware('account.can:'.AccountType::User->value)
+                ->name('users.matching');
+
+            Route::get('/users/bookings/{booking}/quote', BookingQuoteController::class)
+                ->middleware('account.can:'.AccountType::User->value)
+                ->name('users.bookings.quote');
         });
     });
 

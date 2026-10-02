@@ -48,7 +48,7 @@ return [
     'user' => [
         'account_type' => 'users',
         'origin' => env('FIXMATE_USER_ORIGIN', 'http://localhost:3000'),
-        'routes_not_yet_built' => ['/bookings/'],
+        'routes_not_yet_built' => [],
     ],
 
     'worker' => [
@@ -97,13 +97,29 @@ return [
     | So restoring one is two edits in the same commit, which is the point:
     | the page and the link land together or neither does.
     |
-    | A note on `user:/bookings/`, which is the one entry that is not simply
-    | missing. There is no list of bookings anywhere in this repository — no
-    | bookings table, no bookings route, and only one booking screen at
-    | `/booking-details/`. The navigation entry labelled "Bookings" was
-    | repointed there rather than deleted, because a link to nothing is a
-    | worse mismatch than a plural noun pointing at a single booking. When the
-    | real list arrives, restore `/bookings/` and repoint the entry at it.
+    | ## `user:/bookings/` was on this list, and it was the one entry that was
+    | not simply missing
+    |
+    | There was no list of bookings anywhere in this repository — no bookings
+    | table, no bookings route, and only one booking screen at
+    | `/booking-details/`. Rather than delete the navigation entry, it was
+    | repointed at that screen, because a link to nothing is a worse mismatch
+    | than a plural noun pointing at a single booking.
+    |
+    | **That was a deferral and it has now been paid.** `GET /users/bookings` had
+    | a route, a controller and a typed operation with nothing calling it, so the
+    | endpoint existed to serve a page that had been deferred. `apps/user/app/
+    | bookings/page.tsx` is that page and the tab is repointed at it; `/bookings/`
+    | is off this list and the tab's "Bookings" is a list again.
+    |
+    | The screen reads `has_quote` per row to decide whether that row is a link,
+    | because `/booking-details/` is one page pinned to one booking and a static
+    | export has no per-booking route. So the list is not merely a page here: it is
+    | the navigation, and the detail screen is a destination it reaches.
+    |
+    | `/bookings/` on `admin` below is a **different route** and is still unbuilt.
+    | An administrator listing every booking on the platform is not the customer's
+    | own visits, and nothing in this repository answers it.
     |
     */
 
