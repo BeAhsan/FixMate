@@ -74,7 +74,11 @@ COPY packages/api-client/package.json ./packages/api-client/
 COPY packages/session/package.json ./packages/session/
 COPY packages/ui/package.json ./packages/ui/
 
-RUN npm ci
+# The npm cache is mounted, not copied into the layer: a retried or
+# re-run build reuses already-downloaded packages instead of fetching
+# the whole tree from registry.npmjs.org again, which is what an
+# idle timeout during a cold parallel install looks like.
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 COPY apps/admin ./apps/admin
 
